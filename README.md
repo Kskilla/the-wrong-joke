@@ -12,3 +12,5 @@ Deploy by connecting the repo to Vercel. The function will be available at `/api
 
 ## Local test
 You can use `vercel dev` or any local server; ensure the API route is reachable at `/api/generate`.
+
+Trigger redeploy 2025-10-08T20:03:01
