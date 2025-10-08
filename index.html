@@ -2,349 +2,263 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>The Wrong Joke</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Wrong Joke</title>
   <style>
     :root {
-      --border: #cfcfcf;
-      --text: #222;
-      --muted: #666;
+      --border: 1px solid #222;
       --radius: 10px;
+      --pad: clamp(8px, 1.2vw, 16px);
+      --gap: clamp(8px, 1.2vw, 16px);
+      --font-size: clamp(14px, 1.2vw, 18px);
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-      color: var(--text);
-      background: #fff;
-    }
-    .wrap {
-      max-width: 1100px;
-      margin: 20px auto 48px;
-      padding: 0 16px;
-    }
-    .panel {
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-    }
-    h1.title {
-      margin: 0 0 8px;
-      text-align: center;
-      font-weight: 800;
-      font-size: clamp(26px, 3.4vw, 36px);
-    }
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-bottom: 10px;
-    }
-    button {
-      padding: 8px 14px;
-      border: 2px solid var(--border);
-      border-radius: 10px;
-      background: #fff;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    button[disabled] { opacity: .6; cursor: progress; }
-    textarea#jokeBox {
-      width: 100%;
-      height: 250px;
-      resize: vertical;
-      padding: 12px;
-      border: 2px solid var(--border);
-      border-radius: 10px;
-      font-size: 15px;
-      line-height: 1.45;
-      color: var(--text);
-    }
-    .try-again {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 10px;
-    }
+    body { margin: 0; padding: var(--pad); font-family: var(--sans); font-size: var(--font-size); color: #111; background: #fff; }
+    .page { max-width: 1100px; margin: 0 auto; display: grid; gap: var(--gap); }
+    header { border: var(--border); border-radius: var(--radius); padding: calc(var(--pad) * 0.9); text-align: center; }
+    header h1 { margin: 0; font-weight: 700; letter-spacing: 0.02em; }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .card {
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
-    }
-    .card h3 {
-      margin: 0 0 6px;
-      font-size: 16px;
-    }
-    label, .hint { font-size: 13px; color: var(--muted); }
-    select, .multibox {
-      width: 100%;
-      padding: 10px;
-      border: 2px solid var(--border);
-      border-radius: 10px;
-      font-size: 14px;
-      background: #fff;
-    }
-    .multibox { height: 72px; overflow: auto; }
-    .count { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .controls { border: var(--border); border-radius: var(--radius); padding: var(--pad); display: grid; gap: var(--gap); }
+    .controls-bar { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--gap); }
+    .controls-bar .spacer { display: block; }
+    .btn { border: var(--border); background: #f8f8f8; border-radius: 8px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+    .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
-    .footer {
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
-      margin-top: 16px;
-      font-size: 14px;
-    }
-    .footer em { font-style: italic; }
-    .footer a { color: #0b67d3; text-decoration: underline; }
+    .message { min-height: 18vh; border: var(--border); border-radius: 8px; padding: calc(var(--pad) * 1.0); background: #fff; overflow: auto; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .again { display: flex; justify-content: flex-end; }
 
-    @media (max-width: 920px) {
-      .grid { grid-template-columns: 1fr; }
-      textarea#jokeBox { height: 220px; }
-    }
+    .grid-3 { display: grid; gap: var(--gap); }
+    .panel { border: var(--border); border-radius: var(--radius); padding: var(--pad); }
+    .panel h2 { margin: 0 0 6px 0; font-size: 0.95em; font-weight: 700; }
+    .options { display: grid; gap: 8px; }
+    .options label { font-weight: 600; }
+    .options select { width: 100%; border: var(--border); border-radius: 8px; padding: 10px; background: #fff; }
+
+    footer { border: var(--border); border-radius: var(--radius); padding: var(--pad); font-size: 0.9em; line-height: 1.4; }
+    footer a { color: #111; text-decoration: underline; }
+
+    @media (min-width: 768px) { .message { min-height: 22vh; } }
+    @media (min-width: 900px) { .grid-3 { grid-template-columns: 1fr 1fr 1fr; } .message { min-height: 24vh; } }
+    @media (orientation: landscape) { .message { min-height: 20vh; } }
+
+    :focus-visible { outline: 3px solid #000; outline-offset: 2px; }
+    .sr-only { position: absolute; left: -9999px; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="panel">
-      <h1 class="title">The Wrong Joke</h1>
+  <div class="page" role="application" aria-label="The Wrong Joke interface">
+    <header><h1>The Wrong Joke</h1></header>
 
-      <div class="toolbar">
-        <button id="clearBtn">Clear</button>
-        <button id="tellBtn">Tell me a joke</button>
+    <section class="controls" aria-labelledby="controls-title">
+      <h2 id="controls-title" class="sr-only">Controls</h2>
+      <div class="controls-bar">
+        <div class="spacer"></div>
+        <button class="btn" id="btn-clear" aria-label="Clear the current output and selections">Clear</button>
+        <button class="btn" id="btn-generate" aria-label="Generate the joke with the selected settings">Tell me a joke</button>
       </div>
 
-      <textarea id="jokeBox" placeholder='Pick options below and click "Tell me a joke".'></textarea>
-
-      <div class="try-again">
-        <button id="againBtn" disabled>Try again</button>
-      </div>
-    </div>
-
-    <div class="grid">
-      <!-- Scenario -->
-      <div class="card">
-        <h3>Scenario</h3>
-        <div class="hint">Pick 1:</div>
-        <select id="scenario">
-          <option value="">— choose —</option>
-          <option>Queue</option>
-          <option>Desktop</option>
-          <option>Entrance hall</option>
-          <option>Gallery</option>
-          <option>Bathroom</option>
-          <option>Cloakroom</option>
-          <option>Elevator</option>
-          <option>Director's office</option>
-          <option>Education Department</option>
-          <option>Archive</option>
-          <option>Library</option>
-          <option>Auditorium</option>
-          <option>Shop</option>
-          <option>Storehouse</option>
-        </select>
+      <div class="message" id="output" aria-live="polite" aria-atomic="true">
+Pick options below and click “Tell me a joke”.
       </div>
 
-      <!-- Roles (multi 1–2) -->
-      <div class="card">
-        <h3>Roles</h3>
-        <div class="hint">Pick 1–2:</div>
-        <div id="rolesBox" class="multibox"></div>
-        <div class="count" id="roleCount">0 selected (max 2)</div>
+      <div class="again">
+        <button class="btn" id="btn-retry-bottom" aria-label="Generate a different version with the same settings" disabled>Try again</button>
+      </div>
+    </section>
+
+    <section class="grid-3" aria-label="Parameters">
+      <div class="panel" id="panel-scenario">
+        <h2>Scenario</h2>
+        <div class="options">
+          <label for="scenario">Pick 1:</label>
+          <select id="scenario" name="scenario">
+            <option value="" selected disabled>— choose —</option>
+          </select>
+        </div>
       </div>
 
-      <!-- Tone -->
-      <div class="card">
-        <h3>Tone</h3>
-        <div class="hint">Pick 1:</div>
-        <select id="tone">
-          <option value="">— choose —</option>
-          <option>Dry</option>
-          <option>Ironic</option>
-          <option>Cocky</option>
-          <option>Silly</option>
-          <option>Zizek</option>
-          <option>Sarcastic</option>
-          <option>Faemino-Cansado</option>
-          <option>Flowery</option>
-          <option>Cringe</option>
-          <option>Fantastic</option>
-          <option>Meta</option>
-          <option>Campy</option>
-          <option>Over-the-top</option>
-        </select>
+      <div class="panel" id="panel-roles">
+        <h2>Roles</h2>
+        <div class="options">
+          <label for="role1">Pick 1–2:</label>
+          <select id="role1" name="role1">
+            <option value="" selected>— choose —</option>
+          </select>
+          <label for="role2" class="sr-only">Second role (optional)</label>
+          <select id="role2" name="role2">
+            <option value="">— none —</option>
+          </select>
+          <div id="roles-hint" aria-live="polite" style="font-size:0.9em;color:#444;">0 selected (max 2)</div>
+        </div>
       </div>
-    </div>
 
-    <div class="footer">
-      <em>The Wrong Joke</em> is a project by
-      <a href="https://www.instagram.com/norabaron_/" target="_blank" rel="noopener noreferrer">Nora Barón</a>,
-      commissioned by <a href="https://glosopeda.com/" target="_blank" rel="noopener noreferrer">Glosopeda</a> for
-      <a href="https://glosopeda.com/" target="_blank" rel="noopener noreferrer">MUSEO</a>, at
-      <a href="https://thewrong.org/" target="_blank" rel="noopener noreferrer">The Wrong Biennale</a>, 2025.
-    </div>
+      <div class="panel" id="panel-tone">
+        <h2>Tone</h2>
+        <div class="options">
+          <label for="tone">Pick 1:</label>
+          <select id="tone" name="tone">
+            <option value="" selected disabled>— choose —</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p><em>The Wrong Joke</em> is a project by
+        <a href="https://www.instagram.com/norabaron_/" rel="noopener" target="_blank">Nora Barón</a>, commissioned by
+        <a href="https://glosopeda.com/" rel="noopener" target="_blank">Glosopeda</a> for
+        <a href="https://glosopeda.com/" rel="noopener" target="_blank">MUSEO</a>, at
+        <a href="https://thewrong.org/" rel="noopener" target="_blank">The Wrong Biennale</a>, 2025.
+      </p>
+    </footer>
   </div>
 
   <script>
-    // ----- Populate roles (checkbox list, max 2) -----
-    const ROLE_LIST = [
-      "Visitor","Artist","Curator","Director","Gallerist","Technician","Guide","Critic",
-      "Registrar","Guard","Cleaner","Cloakroom attendant","Ticket seller","Dog"
+    // Canonical lists
+    const SCENARIOS = [
+      'Queue','Desktop','Entrance hall','Gallery','Bathroom','Cloakroom','Elevator',
+      "Director's office",'Education Department','Archive','Library','Auditorium','Shop','Storehouse'
     ];
-    const rolesBox = document.getElementById('rolesBox');
-    const roleCount = document.getElementById('roleCount');
+    const ROLES = [
+      'Visitor','Artist','Curator','Director','Gallerist','Technician','Guide','Critic','Registrar','Guard','Cleaner','Cloakroom attendant','Ticket seller','Dog'
+    ];
+    const TONES = [
+      'Dry','Ironic','Cocky','Silly','Zizek','Sarcastic','Faemino-Cansado','Flowery','Cringe','Fantastic','Meta','Campy','Over-the-top'
+    ];
+    const ENDINGS_ALLOWED = [
+      "Shit! I was telling it the wrong way...",
+      "Hmm... wait, wait, that's not the way.",
+      "Mmm... it wasn't like that, but it is very funny, I swear.",
+      "No — no, that's not how it goes. Hold on.",
+      "Wait. I'm messing it up. This is not how the joke goes.",
+      "Hmm... maybe I have it backwards. Sorry, lost it."
+    ];
+    const DEFAULT_LENGTH = "medium";
 
-    ROLE_LIST.forEach(name => {
-      const id = 'role_' + name.replace(/\s+/g,'_');
-      const row = document.createElement('label');
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.gap = '8px';
-      row.style.margin = '6px 0';
+    // Elements
+    const out = document.getElementById('output');
+    const btnGenerate = document.getElementById('btn-generate');
+    const btnClear = document.getElementById('btn-clear');
+    const btnRetryBottom = document.getElementById('btn-retry-bottom');
+    const selScenario = document.getElementById('scenario');
+    const role1 = document.getElementById('role1');
+    const role2 = document.getElementById('role2');
+    const rolesHint = document.getElementById('roles-hint');
+    const selTone = document.getElementById('tone');
 
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = name;
-      cb.id = id;
-
-      cb.addEventListener('change', () => {
-        const selected = currentRoles();
-        // Enforce max 2 selections
-        if (selected.length > 2) {
-          cb.checked = false;
-        }
-        updateRoleCount();
-        enableButtonsIfReady();
-      });
-
-      const span = document.createElement('span');
-      span.textContent = name;
-
-      row.appendChild(cb);
-      row.appendChild(span);
-      rolesBox.appendChild(row);
-    });
-
-    function currentRoles() {
-      return [...rolesBox.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
+    // Populate selects
+    function addOptions(select, items) {
+      while (select.options.length > 1) select.remove(1);
+      items.forEach(v => select.add(new Option(v, v)));
     }
-    function updateRoleCount() {
-      const n = currentRoles().length;
-      roleCount.textContent = `${n} selected (max 2)`;
+    addOptions(selScenario, SCENARIOS);
+    addOptions(selTone, TONES);
+
+    function populateRoleSelect(sel, exclude) {
+      sel.innerHTML = '';
+      const placeholder = document.createElement('option');
+      if (sel === role1) { placeholder.value = ''; placeholder.textContent = '— choose —'; placeholder.selected = true; }
+      else { placeholder.value = ''; placeholder.textContent = '— none —'; }
+      sel.appendChild(placeholder);
+      ROLES.forEach(r => { if (exclude && exclude === r) return; sel.appendChild(new Option(r, r)); });
     }
-
-    // ----- UI Elements -----
-    const scenarioEl = document.getElementById('scenario');
-    const toneEl = document.getElementById('tone');
-    const tellBtn = document.getElementById('tellBtn');
-    const againBtn = document.getElementById('againBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const jokeBox = document.getElementById('jokeBox');
-
-    let lastParams = null;
-
-    function getParamsFromUI() {
-      const scenario = scenarioEl.value;
-      const roles = currentRoles();
-      const tone = toneEl.value;
-      const length = 'medium'; // server validates; default agreed
-      return { scenario, roles, tone, length };
+    function updateRolesHint() {
+      const count = (role1.value ? 1 : 0) + (role2.value ? 1 : 0);
+      rolesHint.textContent = count + ' selected (max 2)';
     }
+    function syncRoleSelects() {
+      const v1 = role1.value;
+      const prev2 = role2.value;
+      populateRoleSelect(role2, v1 || null);
+      if (prev2 && [...role2.options].some(o => o.value === prev2)) role2.value = prev2;
+      updateRolesHint();
+    }
+    populateRoleSelect(role1, null);
+    populateRoleSelect(role2, role1.value || null);
+    role1.addEventListener('change', syncRoleSelects);
+    role2.addEventListener('change', updateRolesHint);
+    updateRolesHint();
 
-    function validateParams(p) {
-      if (!p.scenario) return 'Pick a Scenario.';
-      if (!p.tone) return 'Pick a Tone.';
-      if (!Array.isArray(p.roles) || p.roles.length < 1 || p.roles.length > 2) return 'Pick 1–2 Roles.';
+    function setRetryEnabled(on) { btnRetryBottom.disabled = !on; }
+
+    function currentParams(){
+      const scenario = selScenario.value;
+      const roles = [role1.value, role2.value].filter(Boolean);
+      const tone = selTone.value;
+      return { scenario, roles, tone, length: DEFAULT_LENGTH };
+    }
+    function validateSelections(p){
+      if(!p.scenario) return 'Choose a Scenario.';
+      if(p.roles.length===0) return 'Choose at least 1 Role.';
+      if(p.roles.length>2) return 'Roles: max 2.';
+      if(!p.tone) return 'Choose a Tone.';
       return null;
     }
 
-    function setBusy(b) {
-      tellBtn.disabled = b;
-      againBtn.disabled = b || !lastParams;
-      clearBtn.disabled = b;
+    async function callBackend(params){
+      const res = await fetch('/api/generate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ params })
+      });
+      if(!res.ok){ throw new Error('HTTP '+res.status); }
+      // Backend returns a JSON string (not object), keep compat:
+      const text = await res.text();
+      return text;
     }
 
-    function enableButtonsIfReady() {
-      const p = getParamsFromUI();
-      againBtn.disabled = !lastParams;
-      tellBtn.disabled = !!validateParams(p);
+    function prettyError(msg){
+      out.textContent = msg + '\n\nPlease adjust the settings or Try again.';
+    }
+    function setBusy(b){
+      btnGenerate.disabled = b; btnClear.disabled = b; btnRetryBottom.disabled = b || btnRetryBottom.disabled;
+      out.setAttribute('aria-busy', b? 'true':'false');
     }
 
-    scenarioEl.addEventListener('change', enableButtonsIfReady);
-    toneEl.addEventListener('change', enableButtonsIfReady);
+    async function generate(){
+      const p = currentParams();
+      const err = validateSelections(p);
+      if(err){ prettyError(err); return; }
+      setBusy(true); out.textContent = 'Generating…';
+      try{
+        const raw = await callBackend(p);
+        let data; try { data = JSON.parse(raw); } catch(_) { data = null; }
+        if(!data || !data.joke || !ENDINGS_ALLOWED.includes(data.ending_phrase)){
+          prettyError('That wasn\'t a valid take. Try again.');
+        } else {
+          // --- Mostrar la ending phrase una sola vez ---
+          let joke = (data.joke || '').trim();
+          const ending = (data.ending_phrase || '').trim();
+          const normalize = s => s.replace(/\s+/g,' ').trim();
 
-    // ----- Actions -----
-    tellBtn.addEventListener('click', async () => {
-      const params = getParamsFromUI();
-      const err = validateParams(params);
-      if (err) { alert(err); return; }
-      lastParams = params;
-      await requestJoke(params);
-    });
+          if (ending && !normalize(joke).endsWith(normalize(ending))) {
+            // Añade la ending si no está ya al final del joke
+            joke += (joke.endsWith('\n') ? '' : '\n') + ending;
+          }
+          out.textContent = joke;
+          // ---------------------------------------------
 
-    againBtn.addEventListener('click', async () => {
-      if (!lastParams) return;
-      await requestJoke(lastParams);
-    });
-
-    clearBtn.addEventListener('click', () => {
-      scenarioEl.value = '';
-      toneEl.value = '';
-      rolesBox.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
-      updateRoleCount();
-      lastParams = null;
-      jokeBox.value = 'Pick options below and click "Tell me a joke".';
-      enableButtonsIfReady();
-    });
-
-    async function requestJoke(params) {
-      setBusy(true);
-      jokeBox.value = 'Generating…';
-
-      try {
-        const res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ params })
-        });
-
-        if (!res.ok) {
-          const msg = await res.text().catch(()=> 'Network error');
-          throw new Error(msg || 'Network error');
+          setRetryEnabled(true);
         }
-
-        const data = await res.json(); // { joke, ending_phrase, ... }
-
-        // ---- show joke without duplicating ending phrase ----
-        let out = (data.joke || '').trim();
-        const end = (data.ending_phrase || '').trim();
-
-        // Normalizamos espacios y saltos para comparar final
-        const normalize = s => s.replace(/\s+/g,' ').trim();
-        if (end && !normalize(out).endsWith(normalize(end))) {
-          out += (out.endsWith('\n') ? '' : '\n') + end;
-        }
-
-        jokeBox.value = out || '—';
-        againBtn.disabled = false;
-      } catch (e) {
+      }catch(e){
+        prettyError('Network error. Please Try again.');
         console.error(e);
-        jokeBox.value = 'Network error. Please Try again.\n\nPlease adjust the settings or Try again.';
-      } finally {
-        setBusy(false);
-        enableButtonsIfReady();
-      }
+      }finally{ setBusy(false); }
     }
 
-    // init
-    updateRoleCount();
-    enableButtonsIfReady();
+    btnGenerate.addEventListener('click', generate);
+    btnRetryBottom.addEventListener('click', generate);
+    btnClear.addEventListener('click', () => {
+      out.textContent = 'Pick options below and click “Tell me a joke”.';
+      setRetryEnabled(false);
+      selScenario.value = '';
+      role1.value = '';
+      role2.value = '';
+      populateRoleSelect(role2, role1.value || null);
+      selTone.value = '';
+      updateRolesHint();
+    });
   </script>
 </body>
 </html>
