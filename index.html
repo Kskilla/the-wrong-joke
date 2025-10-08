@@ -197,15 +197,15 @@ Pick options below and click “Tell me a joke”.
       return null;
     }
 
+    // --- central fetch with 422 handling ---
     async function callBackend(params){
       const res = await fetch('/api/generate', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ params })
       });
-      if(!res.ok){ throw new Error('HTTP '+res.status); }
-      // Backend returns a JSON string (not object), keep compat:
-      const text = await res.text();
-      return text;
+      const txt = await res.text();
+      return { ok: res.ok, status: res.status, text: txt };
     }
 
     function prettyError(msg){
@@ -216,35 +216,57 @@ Pick options below and click “Tell me a joke”.
       out.setAttribute('aria-busy', b? 'true':'false');
     }
 
+    // avoid duplicating ending phrase
+    function showJokeOnce(data){
+      let joke = (data.joke || '').trim();
+      const ending = (data.ending_phrase || '').trim();
+      const normalize = s => s.replace(/\s+/g,' ').trim();
+      if (ending && !normalize(joke).endsWith(normalize(ending))) {
+        joke += (joke.endsWith('\n') ? '' : '\n') + ending;
+      }
+      out.textContent = joke || '—';
+      setRetryEnabled(true);
+    }
+
+    async function runOnce(params){
+      const resp = await callBackend(params);
+      if (!resp.ok) throw resp; // bubble up with status/text
+      let data = null;
+      try { data = JSON.parse(resp.text); } catch { /* will be handled below */ }
+      if (!data || !data.joke || !ENDINGS_ALLOWED.includes(data.ending_phrase)) {
+        const e = new Error('invalid');
+        e.code = 422;
+        throw e;
+      }
+      showJokeOnce(data);
+    }
+
     async function generate(){
       const p = currentParams();
       const err = validateSelections(p);
       if(err){ prettyError(err); return; }
       setBusy(true); out.textContent = 'Generating…';
-      try{
-        const raw = await callBackend(p);
-        let data; try { data = JSON.parse(raw); } catch(_) { data = null; }
-        if(!data || !data.joke || !ENDINGS_ALLOWED.includes(data.ending_phrase)){
-          prettyError('That wasn\'t a valid take. Try again.');
-        } else {
-          // --- Mostrar la ending phrase una sola vez ---
-          let joke = (data.joke || '').trim();
-          const ending = (data.ending_phrase || '').trim();
-          const normalize = s => s.replace(/\s+/g,' ').trim();
 
-          if (ending && !normalize(joke).endsWith(normalize(ending))) {
-            // Añade la ending si no está ya al final del joke
-            joke += (joke.endsWith('\n') ? '' : '\n') + ending;
+      try {
+        // 1º intento
+        await runOnce(p);
+      } catch (e1) {
+        // Si fue 422/invalid, reintenta una vez automáticamente
+        const is422 = (e1 && (e1.status === 422 || e1.code === 422));
+        if (is422) {
+          try {
+            await runOnce(p); // 2º intento
+          } catch (e2) {
+            prettyError("That wasn't a valid take. Try again.");
+            console.error('Retry failed:', e2);
           }
-          out.textContent = joke;
-          // ---------------------------------------------
-
-          setRetryEnabled(true);
+        } else {
+          prettyError('Network error. Please Try again.');
+          console.error('Request failed:', e1);
         }
-      }catch(e){
-        prettyError('Network error. Please Try again.');
-        console.error(e);
-      }finally{ setBusy(false); }
+      } finally {
+        setBusy(false);
+      }
     }
 
     btnGenerate.addEventListener('click', generate);
