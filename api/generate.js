@@ -1,19 +1,45 @@
-// /api/generate.js — Vercel serverless function (Node.js runtime)
+// /api/generate.js — Vercel Serverless Function (Node.js runtime)
 // Receives: { params: { scenario, roles[], tone, length } }
 // Returns: JSON string with keys: joke, scenario, roles, tone, length, ending_phrase, tags
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed'); return;
+    return res.status(405).send('Method Not Allowed');
   }
   try {
     const { params } = req.body || {};
     const err = validateParams(params);
     if (err) return res.status(400).send(err);
 
-    // Build prompt server-side to avoid trusting the client
+    // ---- STUB MODE (optional for demo/testing) ----
+    if (process.env.USE_STUB === '1') {
+      const ENDINGS = [
+        "Shit! I was telling it the wrong way...",
+        "Hmm... wait, wait, that's not the way.",
+        "Mmm... it wasn't like that, but it is very funny, I swear.",
+        "No — no, that's not how it goes. Hold on.",
+        "Wait. I'm messing it up. This is not how the joke goes.",
+        "Hmm... maybe I have it backwards. Sorry, lost it."
+      ];
+      const ending = ENDINGS[Math.floor(Math.random() * ENDINGS.length)];
+      const stub = {
+        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... and then—`,
+        scenario: params.scenario,
+        roles: params.roles,
+        tone: params.tone,
+        length: params.length || "medium",
+        ending_phrase: ending,
+        tags: ["debug","stub"]
+      };
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(JSON.stringify(stub));
+    }
+    // -----------------------------------------------
+
+    // Build prompt server-side (guardrails)
     const prompt = buildPrompt(params);
 
-    // Call OpenAI (Chat Completions for broad compatibility)
+    // Call OpenAI (Chat Completions)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -23,29 +49,75 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8
+        temperature: 0.8,
+        max_tokens: 350,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a formatting engine. Respond in ENGLISH ONLY. Output a single JSON object exactly matching the requested schema. Do NOT add any preface, explanation, markdown, or extra text. Do NOT address the user.'
+          },
+          { role: 'user', content: prompt }
+        ]
       })
     });
 
     if (!r.ok) {
-      const t = await r.text().catch(()=>'');
+      const t = await r.text().catch(() => '');
+      console.error('OpenAI upstream error:', r.status, t);
       return res.status(502).send('Upstream error: ' + t);
     }
+
     const data = await r.json();
-    const text = data?.choices?.[0]?.message?.content?.trim() || '';
+    let text = data?.choices?.[0]?.message?.content?.trim() || '';
 
     // Validate / parse strict JSON
-    const validated = validateModelOutput(text, params);
+    let validated = validateModelOutput(text, params);
+
+    // If wrapped in markdown or noise, try to extract JSON between braces
+    if (!validated.ok) {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) validated = validateModelOutput(match[0], params);
+    }
+
+    // Final attempt: ask model to repair into pure JSON
+    if (!validated.ok) {
+      const repair = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 350,
+          messages: [
+            {
+              role: 'system',
+              content: 'You fix outputs into a single JSON object exactly matching the schema. NO commentary, NO markdown.'
+            },
+            { role: 'user', content: `Fix this into strict JSON only (no code fences):\n${text}` }
+          ]
+        })
+      });
+
+      if (repair.ok) {
+        const repData = await repair.json();
+        const repText = repData?.choices?.[0]?.message?.content?.trim() || '';
+        validated = validateModelOutput(repText, params);
+      }
+    }
+
     if (!validated.ok) {
       return res.status(422).send(validated.error || 'Invalid model output');
     }
 
-    // Respond with the raw JSON string (frontend will parse and render)
-    return res.status(200).type('application/json').send(validated.jsonString);
+    res.setHeader('Content-Type', 'application/json'); // ← usar header en vez de .type()
+    return res.status(200).send(validated.jsonString);
   } catch (e) {
-    console.error(e);
-    return res.status(500).send('Server error');
+    console.error('SERVER CATCH:', e);
+    return res.status(500).send('Server error: ' + (e?.message || ''));
   }
 }
 
@@ -85,9 +157,9 @@ LENGTH = ${p.length}
 High-level goal:
 Create a short, witty, situational joke in English that uses the given SCENARIO, ROLES, and TONE. The joke must feel like an actual person telling a joke in that place. Important premise: every joke MUST end with the teller realizing they are telling the joke incorrectly and uttering a short self-correcting/confessional line (the "mishap line"). Use one of the allowed endings below.
 
-Structure and formatting:
+Structure and formatting (STRICT):
 1) Output strictly as JSON (no extra commentary) with the following keys:
-   - "joke": string — the full joke text (with line breaks as \n if needed).
+   - "joke": string — the full joke text (with line breaks as \\n if needed).
    - "scenario": string — echo input SCENARIO.
    - "roles": array of strings — echo input ROLES.
    - "tone": string — echo input TONE.
@@ -96,7 +168,7 @@ Structure and formatting:
    - "tags": array of strings — short tags such as ["surreal","dialogue","anti-joke"].
 2) Use only English for the "joke" and the "ending_phrase".
 3) Keep the whole "joke" concise: short ≤160 chars; medium ≤320; long ≤500 and ≤4 lines.
-4) If ROLES has two items, include a short dialogue or interaction; if one, monologue/observation is allowed.
+4) If ROLES has two items, include a short dialogue/interaction; if one, monologue/observation is allowed.
 5) Avoid hateful/violent content and real-person defamation.
 6) If you cannot produce a proper joke, return JSON with "joke":"" and an "error" key explaining why.
 
@@ -105,12 +177,12 @@ ${ENDINGS.map(e=>'- '+e).join('\n')}
 
 Tone guide highlights: Zizek = digressive rant; Faemino-Cansado = absurd logic, deadpan pauses; others match their common voice.
 
-Now, using the inputs provided above, produce ONLY the JSON described.`;
+Return ONLY the JSON object. No preface, no postface, no code fences.`;
 }
 
 function validateModelOutput(text, params) {
-  // Extract JSON part if model wrapped in markdown
   let jsonText = text.trim();
+  // Remove code fences if present
   if (jsonText.startsWith('```')) {
     const m = jsonText.match(/```(?:json)?\n([\s\S]*?)\n```/i);
     if (m) jsonText = m[1].trim();
@@ -119,22 +191,19 @@ function validateModelOutput(text, params) {
   try { obj = JSON.parse(jsonText); } catch (e) {
     return { ok: false, error: 'Model did not return valid JSON' };
   }
-  // Basic schema check
   const keys = ['joke','scenario','roles','tone','length','ending_phrase','tags'];
   for (const k of keys) { if (!(k in obj)) return { ok: false, error: 'Missing key: ' + k }; }
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
   if (typeof obj.joke !== 'string' || !obj.joke.trim()) return { ok:false, error:'empty joke' };
   if (!ENDINGS.includes(obj.ending_phrase)) return { ok:false, error:'ending_phrase not allowed' };
 
-  // Optional: enforce length limits
   const len = (obj.length||'').toLowerCase();
-  const jokeChars = obj.joke.length;
-  if (len === 'short' && jokeChars > 160) return { ok:false, error:'joke too long for short' };
-  if (len === 'medium' && jokeChars > 320) return { ok:false, error:'joke too long for medium' };
+  const chars = obj.joke.length;
+  if (len === 'short' && chars > 160) return { ok:false, error:'joke too long for short' };
+  if (len === 'medium' && chars > 320) return { ok:false, error:'joke too long for medium' };
   if (len === 'long') {
     const lines = obj.joke.split(/\r?\n/).length;
-    if (jokeChars > 500 || lines > 4) return { ok:false, error:'joke too long for long' };
+    if (chars > 500 || lines > 4) return { ok:false, error:'joke too long for long' };
   }
-
   return { ok: true, jsonString: JSON.stringify(obj) };
 }
