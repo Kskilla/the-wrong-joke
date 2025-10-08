@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Wrong Joke</title>
+  <style>
+    :root {
+      --border: 1px solid #222;
+      --radius: 10px;
+      --pad: clamp(8px, 1.2vw, 16px);
+      --gap: clamp(8px, 1.2vw, 16px);
+      --font-size: clamp(14px, 1.2vw, 18px);
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; padding: var(--pad); font-family: var(--sans); font-size: var(--font-size); color: #111; background: #fff; }
+    .page { max-width: 1100px; margin: 0 auto; display: grid; gap: var(--gap); }
+    header { border: var(--border); border-radius: var(--radius); padding: calc(var(--pad) * 0.9); text-align: center; }
+    header h1 { margin: 0; font-weight: 700; letter-spacing: 0.02em; }
+
+    .controls { border: var(--border); border-radius: var(--radius); padding: var(--pad); display: grid; gap: var(--gap); }
+    .controls-bar { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--gap); }
+    .controls-bar .spacer { display: block; }
+    .btn { border: var(--border); background: #f8f8f8; border-radius: 8px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+    .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+    .message { min-height: 18vh; border: var(--border); border-radius: 8px; padding: calc(var(--pad) * 1.0); background: #fff; overflow: auto; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .again { display: flex; justify-content: flex-end; }
+
+    .grid-3 { display: grid; gap: var(--gap); }
+    .panel { border: var(--border); border-radius: var(--radius); padding: var(--pad); }
+    .panel h2 { margin: 0 0 6px 0; font-size: 0.95em; font-weight: 700; }
+    .options { display: grid; gap: 8px; }
+    .options label { font-weight: 600; }
+    .options select { width: 100%; border: var(--border); border-radius: 8px; padding: 10px; background: #fff; }
+
+    footer { border: var(--border); border-radius: var(--radius); padding: var(--pad); font-size: 0.9em; line-height: 1.4; }
+    footer a { color: #111; text-decoration: underline; }
+
+    @media (min-width: 768px) { .message { min-height: 22vh; } }
+    @media (min-width: 900px) { .grid-3 { grid-template-columns: 1fr 1fr 1fr; } .message { min-height: 24vh; } }
+    @media (orientation: landscape) { .message { min-height: 20vh; } }
+
+    :focus-visible { outline: 3px solid #000; outline-offset: 2px; }
+    .sr-only { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <div class="page" role="application" aria-label="The Wrong Joke interface">
+    <header><h1>The Wrong Joke</h1></header>
+
+    <section class="controls" aria-labelledby="controls-title">
+      <h2 id="controls-title" class="sr-only">Controls</h2>
+      <div class="controls-bar">
+        <div class="spacer"></div>
+        <button class="btn" id="btn-clear" aria-label="Clear the current output and selections">Clear</button>
+        <button class="btn" id="btn-generate" aria-label="Generate the joke with the selected settings">Tell me a joke</button>
+      </div>
+
+      <div class="message" id="output" aria-live="polite" aria-atomic="true">
+Pick options below and click “Tell me a joke”.
+      </div>
+
+      <div class="again">
+        <button class="btn" id="btn-retry-bottom" aria-label="Generate a different version with the same settings" disabled>Try again</button>
+      </div>
+    </section>
+
+    <section class="grid-3" aria-label="Parameters">
+      <div class="panel" id="panel-scenario">
+        <h2>Scenario</h2>
+        <div class="options">
+          <label for="scenario">Pick 1:</label>
+          <select id="scenario" name="scenario">
+            <option value="" selected disabled>— choose —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-roles">
+        <h2>Roles</h2>
+        <div class="options">
+          <label for="role1">Pick 1–2:</label>
+          <select id="role1" name="role1">
+            <option value="" selected>— choose —</option>
+          </select>
+          <label for="role2" class="sr-only">Second role (optional)</label>
+          <select id="role2" name="role2">
+            <option value="">— none —</option>
+          </select>
+          <div id="roles-hint" aria-live="polite" style="font-size:0.9em;color:#444;">0 selected (max 2)</div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-tone">
+        <h2>Tone</h2>
+        <div class="options">
+          <label for="tone">Pick 1:</label>
+          <select id="tone" name="tone">
+            <option value="" selected disabled>— choose —</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p><em>The Wrong Joke</em> is a project by
+        <a href="https://www.instagram.com/norabaron_/" rel="noopener" target="_blank">Nora Barón</a>, commissioned by
+        <a href="https://glosopeda.com/" rel="noopener" target="_blank">Glosopeda</a> for
+        <a href="https://glosopeda.com/" rel="noopener" target="_blank">MUSEO</a>, at
+        <a href="https://thewrong.org/" rel="noopener" target="_blank">The Wrong Biennale</a>, 2025.
+      </p>
+    </footer>
+  </div>
+
+  <script>
+    // Canonical lists
+    const SCENARIOS = [
+      'Queue','Desktop','Entrance hall','Gallery','Bathroom','Cloakroom','Elevator',
+      "Director's office",'Education Department','Archive','Library','Auditorium','Shop','Storehouse'
+    ];
+    const ROLES = [
+      'Visitor','Artist','Curator','Director','Gallerist','Technician','Guide','Critic','Registrar','Guard','Cleaner','Cloakroom attendant','Ticket seller','Dog'
+    ];
+    const TONES = [
+      'Dry','Ironic','Cocky','Silly','Zizek','Sarcastic','Faemino-Cansado','Flowery','Cringe','Fantastic','Meta','Campy','Over-the-top'
+    ];
+    const ENDINGS_ALLOWED = [
+      "Shit! I was telling it the wrong way...",
+      "Hmm... wait, wait, that's not the way.",
+      "Mmm... it wasn't like that, but it is very funny, I swear.",
+      "No — no, that's not how it goes. Hold on.",
+      "Wait. I'm messing it up. This is not how the joke goes.",
+      "Hmm... maybe I have it backwards. Sorry, lost it."
+    ];
+    const DEFAULT_LENGTH = "medium";
+
+    // Elements
+    const out = document.getElementById('output');
+    const btnGenerate = document.getElementById('btn-generate');
+    const btnClear = document.getElementById('btn-clear');
+    const btnRetryBottom = document.getElementById('btn-retry-bottom');
+    const selScenario = document.getElementById('scenario');
+    const role1 = document.getElementById('role1');
+    const role2 = document.getElementById('role2');
+    const rolesHint = document.getElementById('roles-hint');
+    const selTone = document.getElementById('tone');
+
+    // Populate selects
+    function addOptions(select, items) {
+      while (select.options.length > 1) select.remove(1);
+      items.forEach(v => select.add(new Option(v, v)));
+    }
+    addOptions(selScenario, SCENARIOS);
+    addOptions(selTone, TONES);
+
+    function populateRoleSelect(sel, exclude) {
+      sel.innerHTML = '';
+      const placeholder = document.createElement('option');
+      if (sel === role1) { placeholder.value = ''; placeholder.textContent = '— choose —'; placeholder.selected = true; }
+      else { placeholder.value = ''; placeholder.textContent = '— none —'; }
+      sel.appendChild(placeholder);
+      ROLES.forEach(r => { if (exclude && exclude === r) return; sel.appendChild(new Option(r, r)); });
+    }
+    function updateRolesHint() {
+      const count = (role1.value ? 1 : 0) + (role2.value ? 1 : 0);
+      rolesHint.textContent = count + ' selected (max 2)';
+    }
+    function syncRoleSelects() {
+      const v1 = role1.value;
+      const prev2 = role2.value;
+      populateRoleSelect(role2, v1 || null);
+      if (prev2 && [...role2.options].some(o => o.value === prev2)) role2.value = prev2;
+      updateRolesHint();
+    }
+    populateRoleSelect(role1, null);
+    populateRoleSelect(role2, role1.value || null);
+    role1.addEventListener('change', syncRoleSelects);
+    role2.addEventListener('change', updateRolesHint);
+    updateRolesHint();
+
+    function setRetryEnabled(on) { btnRetryBottom.disabled = !on; }
+
+    function currentParams(){
+      const scenario = selScenario.value;
+      const roles = [role1.value, role2.value].filter(Boolean);
+      const tone = selTone.value;
+      return { scenario, roles, tone, length: DEFAULT_LENGTH };
+    }
+    function validateSelections(p){
+      if(!p.scenario) return 'Choose a Scenario.';
+      if(p.roles.length===0) return 'Choose at least 1 Role.';
+      if(p.roles.length>2) return 'Roles: max 2.';
+      if(!p.tone) return 'Choose a Tone.';
+      return null;
+    }
+
+    async function callBackend(params){
+      const res = await fetch('/api/generate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ params })
+      });
+      if(!res.ok){ throw new Error('HTTP '+res.status); }
+      // Backend returns a JSON string (not object), keep compat:
+      const text = await res.text();
+      return text;
+    }
+
+    function prettyError(msg){
+      out.textContent = msg + '\n\nPlease adjust the settings or Try again.';
+    }
+    function setBusy(b){
+      btnGenerate.disabled = b; btnClear.disabled = b; btnRetryBottom.disabled = b || btnRetryBottom.disabled;
+      out.setAttribute('aria-busy', b? 'true':'false');
+    }
+
+    async function generate(){
+      const p = currentParams();
+      const err = validateSelections(p);
+      if(err){ prettyError(err); return; }
+      setBusy(true); out.textContent = 'Generating…';
+      try{
+        const raw = await callBackend(p);
+        let data; try { data = JSON.parse(raw); } catch(_) { data = null; }
+        if(!data || !data.joke || !ENDINGS_ALLOWED.includes(data.ending_phrase)){
+          prettyError('That wasn\'t a valid take. Try again.');
+        } else {
+          // Show only the joke text (no labels/prompt), per Nora/Quino
+          out.textContent = data.joke + "\n" + data.ending_phrase;
+          setRetryEnabled(true);
+        }
+      }catch(e){
+        prettyError('Network error. Please Try again.');
+        console.error(e);
+      }finally{ setBusy(false); }
+    }
+
+    btnGenerate.addEventListener('click', generate);
+    btnRetryBottom.addEventListener('click', generate);
+    btnClear.addEventListener('click', () => {
+      out.textContent = 'Pick options below and click “Tell me a joke”.';
+      setRetryEnabled(false);
+      selScenario.value = '';
+      role1.value = '';
+      role2.value = '';
+      populateRoleSelect(role2, role1.value || null);
+      selTone.value = '';
+      updateRolesHint();
+    });
+  </script>
+</body>
+</html>
