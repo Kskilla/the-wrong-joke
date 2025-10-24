@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (process.env.USE_STUB === '1') {
       const ending = pickEnding();
       const stub = {
-        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... and then— ${ending}`,
+        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... — ${ending}`,
         scenario: params.scenario,
         roles: params.roles,
         tone: params.tone,
@@ -64,7 +64,6 @@ export default async function handler(req, res) {
       return res.status(422).json({ error: processed.error, raw: text });
     }
 
-    // Devolvemos el objeto ya corregido/forzado
     return res.status(200).send(JSON.stringify(processed.obj));
 
   } catch (e) {
@@ -113,24 +112,23 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Persona: confident pseudo-expert (Spanish “cuñado” energy) but polite and non-hostile; assertive, a bit cocky; never insulting.
-- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." as timing marks; the rhythm is conversational, not theatrical.
-- Register: use EXACTLY 2 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker". Do not exceed 2. Come up with your own malpropisms and not necessarily use the ones I give as example.
+- Persona: confident pseudo-expert (Spanish “cuñado” energy) but polite and non-hostile; assertive, slightly cocky; never insulting.
+- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." as timing marks; rhythm is conversational, not theatrical.
+- Register: use EXACTLY 2 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker". Do not exceed 2.
 - Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial detail so the logic gently collapses into absurdity. No classic punchline.
-- Conversational flavor: sprinkle 1–2 castizo-style interjections translated into English (e.g., "phenomenal", "right, right", "listen", "indeed")—keep it mild.
-- Setting discipline: keep the scene strictly in the provided museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine).
-  DO NOT mention bars, cafés, drinks, cigarettes, smoking, ashtrays, or counter/bar props explicitly.
+- Conversational flavor: sprinkle 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—keep it subtle.
+- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine). Do NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
 - Form:
-    • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.) with quick back-and-forth.
+    • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), quick back-and-forth.
     • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
 - Language: ENGLISH only; timeless (no topical politics).
-- End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
+- ENDING USAGE (STRICT): the mishap line replaces any punchline; it appears ONLY ONCE, as the very last line. Avoid any apology or "wrong/not the way/sorry" before the last line.`;
   }
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
 - Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
-- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [Yugoslavia, USSR, Soviet Union, Poland, Czechoslovakia, Romania, Bulgaria, Hungary, East Germany, Albania]:
+- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [${ZIZEK_COUNTRIES.join(', ')}]:
     1) "I'm telling an old joke from <COUNTRY>."
     2) "There is this old joke they used to tell in <COUNTRY>."
     3) "I remember an old joke from <COUNTRY>."
@@ -139,11 +137,10 @@ TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
 - Content: add 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
 - Form: 3–5 lines total; conference cadence (short sentences, digressions).
 - Language: ENGLISH only.
-- End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
+- ENDING USAGE (STRICT): the mishap line replaces any punchline; it appears ONLY ONCE, as the very last line. Avoid any apology or "wrong/not the way/sorry" before the last line.`;
   }
   return '';
 }
-
 
 /* ---------- Prompt Builder ---------- */
 
@@ -170,7 +167,7 @@ Structure / formatting (STRICT):
    "joke" (string), "scenario" (string), "roles" (array), "tone" (string),
    "length" (string), "ending_phrase" (string), "tags" (array).
 2) Use only ENGLISH in "joke" and "ending_phrase".
-3) Keep it reasonably concise, but there are NO strict character/line limits.
+3) Keep it reasonably concise; there are NO strict character/line limits.
 4) If ROLES has two items, write a short interaction; if one, a monologue is acceptable.
 5) Avoid hateful/violent content and real-person defamation.
 6) If you cannot comply, return {"joke":"","error":"reason"} strictly as JSON.
@@ -178,7 +175,10 @@ Structure / formatting (STRICT):
 Allowed endings (choose one, verbatim):
 ${ENDINGS.map(e=>'- '+e).join('\n')}
 
-Tone hints: Zizek = digressive lecture; Faemino-Cansado = deadpan bar-counter logic with light malapropisms and a pompous rule that collapses; others keep their usual voice.`;
+IMPORTANT — ENDING INTEGRATION (STRICT):
+- The ending is the ONLY explicit admission of error, and it must appear ONLY ONCE as the LAST line.
+- NO apology or self-correction words BEFORE the ending (e.g., "sorry", "wrong", "not the way", "messed it up", "backwards", "lost it").
+- The ending INTERRUPTS the delivery (abrupt cut): do NOT deliver a classical punchline and then the ending. The ending replaces any punchline.`;
 
   const extra = toneSpecificBlock(p);
   return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
@@ -193,13 +193,22 @@ function extractJSON(text){
     const m = s.match(/```(?:json)?\n([\s\S]*?)\n```/i);
     if (m) s = m[1].trim();
   }
-  // Fallback: slice between first { and last }
   if (!(s.trim().startsWith('{') && s.trim().endsWith('}'))) {
     const first = s.indexOf('{');
     const last = s.lastIndexOf('}');
     if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last+1);
   }
   return s;
+}
+
+// Remove ANY allowed ending occurrences from a string (used on the pre-ending head)
+function stripAllEndingsFrom(text){
+  let out = text;
+  for (const e of ENDINGS) {
+    // Remove all occurrences of the exact ending phrase
+    out = out.split(e).join('');
+  }
+  return out;
 }
 
 function processModelOutput(text, params){
@@ -219,28 +228,43 @@ function processModelOutput(text, params){
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
   if (!Array.isArray(obj.tags)) obj.tags = [];
 
-  // --- Coerce echo fields to inputs to avoid mismatches (UI stays source of truth) ---
+  // --- Coerce echo fields to inputs to avoid mismatches (UI is source of truth) ---
   obj.scenario = params.scenario;
   obj.roles    = params.roles;
   obj.tone     = params.tone;
   obj.length   = params.length;
 
-  // --- Ending enforcement ---
+  // --- Ending selection / enforcement ---
   let ending = normalizeStr(obj.ending_phrase);
   const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
   if (!foundAllowed) {
     const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
     ending = tail || pickEnding();
   }
-  // Ensure joke ends exactly with the ending (once)
+
+  // Ensure joke ends exactly once with the ending AND make it abrupt (no punchline before)
   let j = obj.joke.replace(/\s+$/, '');
-  const endsOk = ENDINGS.some(e => j.endsWith(e));
-  obj.ending_phrase = ending;
-  if (!endsOk) {
-    const needsNL = !j.endsWith('\n') && j.includes('\n');
-    const sep = needsNL ? '\n' : (j.endsWith(' ') || j.endsWith('\n') ? '' : ' ');
-    j = j + sep + ending;
+
+  // If the ending appears, keep ONLY the last occurrence; strip any earlier (including other allowed endings)
+  let idx = j.lastIndexOf(ending);
+  if (idx === -1) {
+    // No ending present: we'll append one after cleaning the tail
+    const headClean = j; // processed below the same way
+    j = headClean + ' — ' + ending;
+  } else {
+    let head = j.slice(0, idx);
+    const tail = j.slice(idx); // from ending to end
+    // Purge ALL allowed endings anywhere in head
+    head = stripAllEndingsFrom(head);
+    // Clean trailing punctuation and spaces to force an interruption feel
+    head = head.replace(/[\s\.\!\?…"'’”\)\]\}\:\;]+$/u, '');
+    // Choose separator: if multi-line, prefer newline; else em-dash
+    const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
+    j = head + sep + ending;
   }
+
+  // Final assign
+  obj.ending_phrase = ending;
   obj.joke = j;
 
   // No length limits
