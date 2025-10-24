@@ -41,10 +41,10 @@ export default async function handler(req, res) {
         { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
         { role: 'user', content: prompt }
       ],
-      temperature: 0.6,
-      max_tokens: 400,  // más ágil y menos timeouts
-      timeoutMs: 15000, // 15s timeout duro
-      retries: 2        // reintenta en 429/5xx
+      temperature: 0.6,          // robustez general
+      max_tokens: 400,           // ágil
+      timeoutMs: 15000,
+      retries: 2
     });
 
     if (!upstream.ok) {
@@ -99,7 +99,6 @@ async function openaiChatWithRetry({ model, apiKey, messages, temperature, max_t
 
       const text = await r.text();
       if (!r.ok) {
-        // reintentar en 429/5xx
         if ((r.status === 429 || (r.status >= 500 && r.status <= 504)) && attempt < retries) {
           await sleep(300 * (attempt + 1));
           continue;
@@ -144,6 +143,55 @@ const ZIZEK_COUNTRIES = [
   "Romania", "Bulgaria", "Hungary", "East Germany", "Albania"
 ];
 
+// Lista oficial (Nora) de referencias; el modelo debe elegir 1–2 al azar
+const ZIZEK_REFERENCE_POOL = [
+  "Former Yugoslavia",
+  "Nietzsche’s horse in Turin",
+  "The Balkans",
+  "Communist holidays",
+  "Lenin conference",
+  "Stalin haircut",
+  "Marxist pop art",
+  "Hegelian utopia",
+  "My supposedly strong accent",
+  "Kant’s wig",
+  "Heidegger’s moustache",
+  "Soviet propaganda posters",
+  "Empty vodka bottles on a podium",
+  "The Berlin Wall graffiti",
+  "Trotsky’s diary",
+  "My awkward lecture on Lacan",
+  "Che Guevara keychains",
+  "Forgotten Cold War manuals",
+  "Communist Party snacks",
+  "My imaginary lecture on Derrida",
+  "Posters of heroic factory workers",
+  "Lost communist novels",
+  "Tchaikovsky at the politburo",
+  "Gorbachev’s birthmark",
+  "My awkward dance at communist balls",
+  "Old party membership cards",
+  "My mispronounced Marx quotes",
+  "My imaginary debate with Foucault",
+  "Cold War radio broadcasts",
+  "My failed attempt at Russian ballet",
+  "Posters of smiling factory workers",
+  "Hidden corridors of the Kremlin",
+  "Abandoned communist holiday resorts",
+  "My confused translation of Heidegger",
+  "Secret police notebooks",
+  "My supposedly brilliant Kant joke",
+  "Vodka bottles in the politburo",
+  "Red flags in the attic",
+  "My failed Hegelian experiment",
+  "My absurd lecture on Derrida in Russian",
+  "My imagined conversation with Lenin",
+  "War memorials in the Balkans",
+  "My critique of socialist pop art",
+  "Empty metro stations in Moscow",
+  "Party-approved recipe books"
+];
+
 /* ---------- Helpers ---------- */
 
 function pickEnding() { return ENDINGS[Math.floor(Math.random() * ENDINGS.length)]; }
@@ -167,11 +215,10 @@ function toneSpecificBlock(p){
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
 - Persona: confident pseudo-expert (Spanish “cuñado” vibe) but polite and non-hostile; assertive, slightly cocky; never insulting.
 - Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." for timing; conversational rhythm.
-- Register: use EXACTLY 2 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker". Do not exceed 2.
+- Register: use EXACTLY 2 malapropisms INVENTED FRESH in each joke (do NOT reuse example phrases). They must sound elevated-but-misused (e.g., but not limited to forms like "epistemic mop", "ontological tapas", "dialectical locker").
 - Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial on-site detail so the logic gently collapses into absurdity. No classic punchline.
 - Conversational flavor: sprinkle 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—subtle.
-- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine).
-  DO NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
+- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine). DO NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
 - Form:
     • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), quick back-and-forth.
     • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
@@ -181,17 +228,21 @@ TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado")
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
-- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [${ZIZEK_COUNTRIES.join(', ')}]:
+- Tone: imitate the chaotic conference persona of Slavoj Žižek; first-person, neurotic, self-referential, full of tangents; academic language + absurd humor.
+- Opening (MANDATORY): begin by announcing you are telling an old joke and name a COUNTRY from the former communist East (choose one of: ${ZIZEK_COUNTRIES.join(', ')}). Mention countries only, never cities.
+  Use ONE of these openings (randomly): 
     1) "I'm telling an old joke from <COUNTRY>."
     2) "There is this old joke they used to tell in <COUNTRY>."
     3) "I remember an old joke from <COUNTRY>."
     4) "In <COUNTRY>, there’s this old joke."
     5) "An old joke circulates in <COUNTRY>."
-- Content: add 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
-- Form: 3–5 lines total; conference cadence (short sentences, digressions).
+- Digressions: include at least 1–2 short political/philosophical asides.
+- References: include 1–2 items RANDOMLY CHOSEN from this pool (do not always repeat the same ones):
+  ${ZIZEK_REFERENCE_POOL.map(x=>`• ${x}`).join('\n  ')}
+- Fillers: include at least one "you know"; "and so on, and so on" is optional (not mandatory every time).
+- Form: 3–5 lines total recommended; concise but digressive cadence.
 - Language: ENGLISH only.
-- ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line. Avoid apology/self-correction before the last line.`;
+- ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line; NO apology/self-correction before that.`;
   }
   return '';
 }
@@ -287,24 +338,31 @@ function processModelOutput(text, params){
 
   // --- Ending selection / enforcement ---
   let ending = normalizeStr(obj.ending_phrase);
-  const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
-  if (!foundAllowed) {
-    const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
-    ending = tail || pickEnding();
+
+  // Para Zizek, forzamos el ending principal con "Shit!" (alineado con documento y con tu lista de ENDINGS)
+  const ZIZEK_FORCED_ENDING = ENDINGS[0]; // "Shit! I was telling it the wrong way..."
+  if (obj.tone === 'Zizek') {
+    ending = ZIZEK_FORCED_ENDING;
+  } else {
+    const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
+    if (!foundAllowed) {
+      const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
+      ending = tail || pickEnding();
+    }
   }
 
   // Ensure joke ends exactly once with the ending AND make it abrupt
   let j = obj.joke.replace(/\s+$/, '');
   let idx = j.lastIndexOf(ending);
   if (idx === -1) {
-    // Append ending after cleaning tail  (FIX: regex sin escapes inválidos)
+    // Append ending after cleaning tail (regex con Unicode seguro)
     const headClean = j.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
     j = headClean + ' — ' + ending;
   } else {
     let head = j.slice(0, idx);
     // Purge ANY allowed endings in head
     head = stripAllEndingsFrom(head);
-    // Clean trailing punctuation to feel like a cut  (FIX: regex sin escapes inválidos)
+    // Clean trailing punctuation to feel like a cut
     head = head.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
     const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
     j = head + sep + ending;
