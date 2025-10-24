@@ -40,7 +40,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         temperature: 0.7,
-        max_tokens: 700, // dejamos holgura ya que no validamos longitudes
+        max_tokens: 700,
         messages: [
           { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
           { role: 'user', content: prompt }
@@ -113,22 +113,23 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Persona: "bar know-it-all" (Spanish cuñado vibe): confident, slightly cocky, underinformed but assertive; never insulting or hateful.
-- Register: use 2–3 elevated-but-misused words (light malapropisms), e.g., "ontological tapas", "teleological ticket stub", "epistemic mop".
-- Cadence: short lines; deadpan; sprinkle "(pause)" or "..." to mark the rhythm; include at least one bar prop (beer coaster, toothpick, napkin arithmetic, peanuts).
-- Dialogue form: 
-    • If 2 ROLES → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.) with quick back-and-forth. 
-    • If 1 ROLE → monologue with 1–2 brief interjections by "Other:".
-- Logic: state a pompous “rule” or “definition”, then let it gently collapse into absurdity; no classic punchline.
-- Flavor: mix “high” and “low” references casually (museum label meets football ticket, Ming vase vs. taxi trunk).
-- Language: ENGLISH only; keep it timeless (no topical politics).
+- Persona: bar-counter “know-it-all” (Spanish cuñado energy) but polite and non-hostile; confident, slightly cocky, underinformed, never insulting.
+- Cadence: deadpan minimalism; short lines; sprinkle "(pause)" or "..." as timing marks; keep replies clipped and courteous.
+- Register: use exactly 2–3 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker".
+- Mechanism: state a pompous “rule” or “definition” as if explaining culture, then apply it to a trivial museum/bar detail so it gently collapses into absurdity (no classic punchline).
+- Bar vibe: include at least one bar prop or action translated to the museum setting (beer coaster → exhibition leaflet as coaster, toothpick, napkin arithmetic, peanuts, bill on a receipt).
+- Dialogue form:
+    • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), fast back-and-forth.
+    • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
+- Flavor: mix “high” and “low” casually (Kant meets cloakroom ticket; Ming vase vs. taxi trunk), with castizo politeness in English (e.g., "phenomenal", "right, right", "indeed").
+- Language: ENGLISH only; timeless (no topical politics).
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Persona: first-person lecture, digressive; include one "you know" and one "and so on".
-- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [Yugoslavia, USSR, Soviet Union, Poland, Czechoslovakia, Romania, Bulgaria, Hungary, East Germany, Albania]:
+- Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
+- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [${ZIZEK_COUNTRIES.join(', ')}]:
     1) "I'm telling an old joke from <COUNTRY>."
     2) "There is this old joke they used to tell in <COUNTRY>."
     3) "I remember an old joke from <COUNTRY>."
@@ -141,7 +142,6 @@ TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
   }
   return '';
 }
-
 
 /* ---------- Prompt Builder ---------- */
 
@@ -176,7 +176,7 @@ Structure / formatting (STRICT):
 Allowed endings (choose one, verbatim):
 ${ENDINGS.map(e=>'- '+e).join('\n')}
 
-Tone hints: Zizek = digressive lecture; Faemino-Cansado = absurd bar-logic with elevated-but-misused vocabulary; others keep their usual voice.`;
+Tone hints: Zizek = digressive lecture; Faemino-Cansado = deadpan bar-counter logic with light malapropisms and a pompous rule that collapses; others keep their usual voice.`;
 
   const extra = toneSpecificBlock(p);
   return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
@@ -227,11 +227,10 @@ function processModelOutput(text, params){
   let ending = normalizeStr(obj.ending_phrase);
   const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
   if (!foundAllowed) {
-    // Si el chiste ya termina con un ending permitido, usamos ese; si no, elegimos uno.
     const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
     ending = tail || pickEnding();
   }
-  // Asegura que el chiste termine EXACTAMENTE con el ending una sola vez
+  // Ensure joke ends exactly with the ending (once)
   let j = obj.joke.replace(/\s+$/, '');
   const endsOk = ENDINGS.some(e => j.endsWith(e));
   obj.ending_phrase = ending;
@@ -240,17 +239,9 @@ function processModelOutput(text, params){
     const sep = needsNL ? '\n' : (j.endsWith(' ') || j.endsWith('\n') ? '' : ' ');
     j = j + sep + ending;
   }
-  // Evitar duplicación de ending si el modelo lo metió antes en medio
-  for (const e of ENDINGS) {
-    const idx = j.indexOf(e);
-    if (idx !== -1 && !j.endsWith(e)) {
-      // Si aparece antes pero no es el final, lo dejamos (puede ser gag), no lo truncamos.
-      // Solo garantizamos que el último sea el ending elegido.
-    }
-  }
   obj.joke = j;
 
-  // Sin límites de longitud: no validamos chars/lines
+  // No length limits
 
   return { ok:true, obj };
 }
