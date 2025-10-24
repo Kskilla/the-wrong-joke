@@ -113,15 +113,16 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Persona: bar-counter “know-it-all” (Spanish cuñado energy) but polite and non-hostile; confident, slightly cocky, underinformed, never insulting.
-- Cadence: deadpan minimalism; short lines; sprinkle "(pause)" or "..." as timing marks; keep replies clipped and courteous.
-- Register: use exactly 2–3 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker".
-- Mechanism: state a pompous “rule” or “definition” as if explaining culture, then apply it to a trivial museum/bar detail so it gently collapses into absurdity (no classic punchline).
-- Bar vibe: include at least one bar prop or action translated to the museum setting (beer coaster → exhibition leaflet as coaster, toothpick, napkin arithmetic, peanuts, bill on a receipt).
-- Dialogue form:
-    • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), fast back-and-forth.
+- Persona: confident pseudo-expert (Spanish “cuñado” energy) but polite and non-hostile; assertive, a bit cocky; never insulting.
+- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." as timing marks; the rhythm is conversational, not theatrical.
+- Register: use EXACTLY 2 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker". Do not exceed 2. Come up with your own malpropisms and not necessarily use the ones I give as example.
+- Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial detail so the logic gently collapses into absurdity. No classic punchline.
+- Conversational flavor: sprinkle 1–2 castizo-style interjections translated into English (e.g., "phenomenal", "right, right", "listen", "indeed")—keep it mild.
+- Setting discipline: keep the scene strictly in the provided museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine).
+  DO NOT mention bars, cafés, drinks, cigarettes, smoking, ashtrays, or counter/bar props explicitly.
+- Form:
+    • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.) with quick back-and-forth.
     • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
-- Flavor: mix “high” and “low” casually (Kant meets cloakroom ticket; Ming vase vs. taxi trunk), with castizo politeness in English (e.g., "phenomenal", "right, right", "indeed").
 - Language: ENGLISH only; timeless (no topical politics).
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
@@ -129,7 +130,7 @@ TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado")
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
 - Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
-- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [${ZIZEK_COUNTRIES.join(', ')}]:
+- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [Yugoslavia, USSR, Soviet Union, Poland, Czechoslovakia, Romania, Bulgaria, Hungary, East Germany, Albania]:
     1) "I'm telling an old joke from <COUNTRY>."
     2) "There is this old joke they used to tell in <COUNTRY>."
     3) "I remember an old joke from <COUNTRY>."
@@ -142,6 +143,7 @@ TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
   }
   return '';
 }
+
 
 /* ---------- Prompt Builder ---------- */
 
