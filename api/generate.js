@@ -10,9 +10,9 @@ export default async function handler(req, res) {
   try {
     const { params } = req.body || {};
     const err = validateParams(params);
-    if (err) return res.status(400).send(err);
+    if (err) return res.status(400).json({ error: err });
 
-    // ---- STUB MODE (optional for demo/testing) ----
+    // ---- STUB MODE ----
     if (process.env.USE_STUB === '1') {
       const ending = pickEnding();
       const stub = {
@@ -26,35 +26,39 @@ export default async function handler(req, res) {
       };
       return res.status(200).json(stub);
     }
-    // -----------------------------------------------
+    // -------------------
 
     const prompt = buildPrompt(params);
 
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.7,
-        max_tokens: 700,
-        messages: [
-          { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
-          { role: 'user', content: prompt }
-        ]
-      })
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+
+    const upstream = await openaiChatWithRetry({
+      model,
+      apiKey,
+      messages: [
+        { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.6,
+      max_tokens: 400, // menos tokens → más rápido y menos timeouts
+      timeoutMs: 15000, // 15s timeout duro
+      retries: 2       // reintenta en 429/5xx
     });
 
-    if (!r.ok) {
-      const t = await r.text().catch(() => '');
-      console.error('OpenAI upstream error:', r.status, t);
-      return res.status(502).send('Upstream error: ' + t);
+    if (!upstream.ok) {
+      console.error('OpenAI upstream failure:', upstream.status, upstream.body);
+      const status = upstream.status || 502;
+      // devolvemos JSON claro para que el front no lo confunda con "Network error"
+      return res.status(status).json({
+        error: 'Upstream error',
+        detail: upstream.body || 'No response body',
+        status
+      });
     }
 
-    const data = await r.json();
+    const data = upstream.json;
     let text = data?.choices?.[0]?.message?.content?.trim() || '';
 
     // Parse / sanitize / enforce
@@ -64,13 +68,67 @@ export default async function handler(req, res) {
       return res.status(422).json({ error: processed.error, raw: text });
     }
 
-    return res.status(200).send(JSON.stringify(processed.obj));
+    return res.status(200).json(processed.obj);
 
   } catch (e) {
     console.error('Server error:', e);
-    return res.status(500).send('Server error: ' + (e?.message || ''));
+    return res.status(500).json({ error: e?.message || 'Server error' });
   }
 }
+
+/* ---------- OpenAI helper with timeout & retry ---------- */
+
+async function openaiChatWithRetry({ model, apiKey, messages, temperature, max_tokens, timeoutMs, retries }) {
+  const url = 'https://api.openai.com/v1/chat/completions';
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ model, temperature, max_tokens, messages })
+      });
+
+      clearTimeout(to);
+
+      const text = await r.text();
+      if (!r.ok) {
+        // reintentar en 429/5xx
+        if ((r.status === 429 || (r.status >= 500 && r.status <= 504)) && attempt < retries) {
+          await sleep(300 * (attempt + 1));
+          continue;
+        }
+        return { ok: false, status: r.status, body: text };
+      }
+
+      let json;
+      try { json = JSON.parse(text); }
+      catch (e) { return { ok: false, status: 502, body: 'Non-JSON upstream body' }; }
+
+      return { ok: true, status: 200, json };
+    } catch (err) {
+      clearTimeout(to);
+      const isAbort = err?.name === 'AbortError';
+      // reintentar si fue timeout o red de Node
+      if (isAbort || attempt < retries) {
+        await sleep(300 * (attempt + 1));
+        continue;
+      }
+      return { ok: false, status: 504, body: isAbort ? 'Upstream timeout' : (err?.message || 'Network error') };
+    }
+  }
+
+  return { ok: false, status: 504, body: 'Exhausted retries' };
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
 /* ---------- Constants ---------- */
 
@@ -90,10 +148,7 @@ const ZIZEK_COUNTRIES = [
 
 /* ---------- Helpers ---------- */
 
-function pickEnding() {
-  return ENDINGS[Math.floor(Math.random() * ENDINGS.length)];
-}
-
+function pickEnding() { return ENDINGS[Math.floor(Math.random() * ENDINGS.length)]; }
 function normalizeStr(s){ return (s||'').toString().trim(); }
 function normLower(s){ return normalizeStr(s).toLowerCase(); }
 
@@ -112,17 +167,18 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Persona: confident pseudo-expert (Spanish “cuñado” energy) but polite and non-hostile; assertive, slightly cocky; never insulting.
-- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." as timing marks; rhythm is conversational, not theatrical.
+- Persona: confident pseudo-expert (Spanish “cuñado” vibe) but polite and non-hostile; assertive, slightly cocky; never insulting.
+- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." for timing; conversational rhythm.
 - Register: use EXACTLY 2 light malapropisms (elevated-but-misused terms), e.g., "epistemic mop", "ontological tapas", "dialectical locker". Do not exceed 2.
-- Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial detail so the logic gently collapses into absurdity. No classic punchline.
-- Conversational flavor: sprinkle 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—keep it subtle.
-- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine). Do NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
+- Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial on-site detail so the logic gently collapses into absurdity. No classic punchline.
+- Conversational flavor: sprinkle 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—subtle.
+- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine).
+  DO NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
 - Form:
     • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), quick back-and-forth.
     • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
 - Language: ENGLISH only; timeless (no topical politics).
-- ENDING USAGE (STRICT): the mishap line replaces any punchline; it appears ONLY ONCE, as the very last line. Avoid any apology or "wrong/not the way/sorry" before the last line.`;
+- ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line. Avoid apology/self-correction before the last line.`;
   }
   if (p.tone === 'Zizek') {
     return `
@@ -137,7 +193,7 @@ TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
 - Content: add 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
 - Form: 3–5 lines total; conference cadence (short sentences, digressions).
 - Language: ENGLISH only.
-- ENDING USAGE (STRICT): the mishap line replaces any punchline; it appears ONLY ONCE, as the very last line. Avoid any apology or "wrong/not the way/sorry" before the last line.`;
+- ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line. Avoid apology/self-correction before the last line.`;
   }
   return '';
 }
@@ -163,7 +219,7 @@ Premise:
 Every joke MUST end with a short realization line (the "mishap line") that is EXACTLY one of the allowed endings below.
 
 Structure / formatting (STRICT):
-1) Output strictly as JSON (no extra commentary) with keys:
+1) Return EXACTLY one JSON object (no commentary) with keys:
    "joke" (string), "scenario" (string), "roles" (array), "tone" (string),
    "length" (string), "ending_phrase" (string), "tags" (array).
 2) Use only ENGLISH in "joke" and "ending_phrase".
@@ -178,7 +234,7 @@ ${ENDINGS.map(e=>'- '+e).join('\n')}
 IMPORTANT — ENDING INTEGRATION (STRICT):
 - The ending is the ONLY explicit admission of error, and it must appear ONLY ONCE as the LAST line.
 - NO apology or self-correction words BEFORE the ending (e.g., "sorry", "wrong", "not the way", "messed it up", "backwards", "lost it").
-- The ending INTERRUPTS the delivery (abrupt cut): do NOT deliver a classical punchline and then the ending. The ending replaces any punchline.`;
+- The ending INTERRUPTS the delivery (abrupt cut): do NOT deliver a classic punchline and then the ending. The ending replaces any punchline.`;
 
   const extra = toneSpecificBlock(p);
   return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
@@ -204,10 +260,7 @@ function extractJSON(text){
 // Remove ANY allowed ending occurrences from a string (used on the pre-ending head)
 function stripAllEndingsFrom(text){
   let out = text;
-  for (const e of ENDINGS) {
-    // Remove all occurrences of the exact ending phrase
-    out = out.split(e).join('');
-  }
+  for (const e of ENDINGS) out = out.split(e).join('');
   return out;
 }
 
@@ -228,7 +281,7 @@ function processModelOutput(text, params){
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
   if (!Array.isArray(obj.tags)) obj.tags = [];
 
-  // --- Coerce echo fields to inputs to avoid mismatches (UI is source of truth) ---
+  // --- Coerce echo fields to inputs (UI = source of truth) ---
   obj.scenario = params.scenario;
   obj.roles    = params.roles;
   obj.tone     = params.tone;
@@ -242,32 +295,25 @@ function processModelOutput(text, params){
     ending = tail || pickEnding();
   }
 
-  // Ensure joke ends exactly once with the ending AND make it abrupt (no punchline before)
+  // Ensure joke ends exactly once with the ending AND make it abrupt
   let j = obj.joke.replace(/\s+$/, '');
-
-  // If the ending appears, keep ONLY the last occurrence; strip any earlier (including other allowed endings)
   let idx = j.lastIndexOf(ending);
   if (idx === -1) {
-    // No ending present: we'll append one after cleaning the tail
-    const headClean = j; // processed below the same way
+    // Append ending after cleaning tail
+    const headClean = j.replace(/[\s\.\!\?…"'’”\)\]\}\:\;]+$/u, '');
     j = headClean + ' — ' + ending;
   } else {
     let head = j.slice(0, idx);
-    const tail = j.slice(idx); // from ending to end
-    // Purge ALL allowed endings anywhere in head
+    // Purge ANY allowed endings in head
     head = stripAllEndingsFrom(head);
-    // Clean trailing punctuation and spaces to force an interruption feel
+    // Clean trailing punctuation to feel like a cut
     head = head.replace(/[\s\.\!\?…"'’”\)\]\}\:\;]+$/u, '');
-    // Choose separator: if multi-line, prefer newline; else em-dash
     const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
     j = head + sep + ending;
   }
 
-  // Final assign
   obj.ending_phrase = ending;
   obj.joke = j;
-
-  // No length limits
 
   return { ok:true, obj };
 }
