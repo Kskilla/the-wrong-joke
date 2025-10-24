@@ -113,25 +113,35 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Register: elevated vocabulary MISAPPLIED 2–3 times (e.g., "ontologically barish", "teleological ticket stub").
-- Voice: absurd, polite, deadpan; bar-counter vibe; include at least one bar prop (beer coaster, napkin math, toothpick, peanuts).
-- Form: if 2 ROLES → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.); if 1 ROLE → monologue with 1–2 interjections by "Other:".
-- Rhythm: short lines with "(pause)" or "..." sprinkled; introduce a silly rule/definition that gently collapses; never a classic punchline.
-- Language: ENGLISH; timeless; no topical politics.
+- Persona: "bar know-it-all" (Spanish cuñado vibe): confident, slightly cocky, underinformed but assertive; never insulting or hateful.
+- Register: use 2–3 elevated-but-misused words (light malapropisms), e.g., "ontological tapas", "teleological ticket stub", "epistemic mop".
+- Cadence: short lines; deadpan; sprinkle "(pause)" or "..." to mark the rhythm; include at least one bar prop (beer coaster, toothpick, napkin arithmetic, peanuts).
+- Dialogue form: 
+    • If 2 ROLES → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.) with quick back-and-forth. 
+    • If 1 ROLE → monologue with 1–2 brief interjections by "Other:".
+- Logic: state a pompous “rule” or “definition”, then let it gently collapse into absurdity; no classic punchline.
+- Flavor: mix “high” and “low” references casually (museum label meets football ticket, Ming vase vs. taxi trunk).
+- Language: ENGLISH only; keep it timeless (no topical politics).
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
-- Start: "I'm telling an old joke from <COUNTRY>" where <COUNTRY> is EXACTLY one of: ${ZIZEK_COUNTRIES.join(', ')}.
-- Content: 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
-- Form: 3–5 lines total; conference-like cadence (short sentences; aside clauses).
+- Persona: first-person lecture, digressive; include one "you know" and one "and so on".
+- Opening: begin with EXACTLY ONE of the following phrasings (choose randomly) + a COUNTRY from this list [Yugoslavia, USSR, Soviet Union, Poland, Czechoslovakia, Romania, Bulgaria, Hungary, East Germany, Albania]:
+    1) "I'm telling an old joke from <COUNTRY>."
+    2) "There is this old joke they used to tell in <COUNTRY>."
+    3) "I remember an old joke from <COUNTRY>."
+    4) "In <COUNTRY>, there’s this old joke."
+    5) "An old joke circulates in <COUNTRY>."
+- Content: add 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
+- Form: 3–5 lines total; conference cadence (short sentences, digressions).
 - Language: ENGLISH only.
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   return '';
 }
+
 
 /* ---------- Prompt Builder ---------- */
 
