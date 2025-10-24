@@ -1,11 +1,12 @@
 // /api/generate.js — Vercel Serverless Function (Node.js runtime)
 // Receives: { params: { scenario, roles[], tone, length } }
-// Returns: JSON string with keys: joke, scenario, roles, tone, length, ending_phrase, tags
+// Returns: JSON with keys: joke, scenario, roles, tone, length, ending_phrase, tags
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
+
   try {
     const { params } = req.body || {};
     const err = validateParams(params);
@@ -31,12 +32,11 @@ export default async function handler(req, res) {
         ending_phrase: ending,
         tags: ["debug","stub"]
       };
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).send(JSON.stringify(stub));
+      return res.status(200).json(stub);
     }
     // -----------------------------------------------
 
-    // Build prompt server-side (guardrails)
+    // Build prompt with guardrails
     const prompt = buildPrompt(params);
 
     // Call OpenAI (Chat Completions)
@@ -49,14 +49,10 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model,
-        temperature: 0.8,
-        max_tokens: 350,
+        temperature: 0.7,
+        max_tokens: 400,
         messages: [
-          {
-            role: 'system',
-            content:
-              'You are a formatting engine. Respond in ENGLISH ONLY. Output a single JSON object exactly matching the requested schema. Do NOT add any preface, explanation, markdown, or extra text. Do NOT address the user.'
-          },
+          { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
           { role: 'user', content: prompt }
         ]
       })
@@ -76,50 +72,29 @@ export default async function handler(req, res) {
 
     // If wrapped in markdown or noise, try to extract JSON between braces
     if (!validated.ok) {
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) validated = validateModelOutput(match[0], params);
-    }
-
-    // Final attempt: ask model to repair into pure JSON
-    if (!validated.ok) {
-      const repair = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.2,
-          max_tokens: 350,
-          messages: [
-            {
-              role: 'system',
-              content: 'You fix outputs into a single JSON object exactly matching the schema. NO commentary, NO markdown.'
-            },
-            { role: 'user', content: `Fix this into strict JSON only (no code fences):\n${text}` }
-          ]
-        })
-      });
-
-      if (repair.ok) {
-        const repData = await repair.json();
-        const repText = repData?.choices?.[0]?.message?.content?.trim() || '';
-        validated = validateModelOutput(repText, params);
+      const first = text.indexOf('{');
+      const last = text.lastIndexOf('}');
+      if (first !== -1 && last !== -1 && last > first) {
+        const slice = text.slice(first, last + 1);
+        validated = validateModelOutput(slice, params);
       }
     }
 
     if (!validated.ok) {
-      return res.status(422).send(validated.error || 'Invalid model output');
+      console.warn('Model output failed validation:', validated.error, '\nRaw:', text);
+      return res.status(422).json({ error: validated.error, raw: text });
     }
 
-    res.setHeader('Content-Type', 'application/json'); // ← usar header en vez de .type()
+    // Success
     return res.status(200).send(validated.jsonString);
+
   } catch (e) {
-    console.error('SERVER CATCH:', e);
+    console.error('Server error:', e);
     return res.status(500).send('Server error: ' + (e?.message || ''));
   }
 }
+
+/* ---------- Constants / Validation ---------- */
 
 const ENDINGS = [
   "Shit! I was telling it the wrong way...",
@@ -139,8 +114,38 @@ function validateParams(p) {
   return null;
 }
 
+/* ---------- Tone-specific injection (ONLY for the two special tones) ---------- */
+
+function toneSpecificBlock(p){
+  if (p.tone === 'Faemino-Cansado') {
+    return `
+TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
+- Voice: absurd, polite, dry; short lines; deadpan pauses marked with "(pause)" or "...".
+- Form: if 2 ROLES → micro-dialogue with role prefixes ("Artist:", "Curator:", etc.);
+        if 1 ROLE → monologue but include 1–2 interjections by "Other:".
+- Space: stay grounded in the museum/gallery place (cloakroom tags, labels, gloves, elevator, floor signage, QR codes, etc.).
+- Logic: invent a silly rule or definition that collapses gently; never a classic punchline.
+- Length: 3–7 short lines (still respect overall LENGTH limit).
+- Language: English only. No current political slang. Keep it timeless.
+- End: last line MUST be EXACTLY one of the allowed endings. No variations.`;
+  }
+  if (p.tone === 'Zizek') {
+    return `
+TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
+- Narration: first-person, conference-like, chaotic/digressive; sprinkle "you know" and sometimes "and so on, and so on".
+- Start: explicitly say you're telling an old joke; mention a COUNTRY from the former communist East (e.g., former Yugoslavia, USSR, etc.). Countries only, no cities.
+- Include 1–2 short digressions (philosophy/politics) and 1–2 references (e.g., Hegelian utopia, Soviet posters, Gorbachev’s birthmark, Trotsky’s diary, Kant’s wig, Lacan lecture, etc.).
+- Length: 3–5 lines, concise (respect LENGTH limit).
+- Language: English only.
+- End: last line MUST be EXACTLY one of the allowed endings. No variations.`;
+  }
+  return '';
+}
+
+/* ---------- Prompt Builder ---------- */
+
 function buildPrompt(p) {
-  return `INSTRUCTIONS FOR THE LLM — GENERATE ONE JOKE
+  const base = `INSTRUCTIONS FOR THE LLM — GENERATE ONE JOKE
 
 Inputs (exact allowed sets):
 - SCENARIO: one of {Queue, Desktop, Entrance hall, Gallery, Bathroom, Cloakroom, Elevator, Director's office, Education Department, Archive, Library, Auditorium, Shop, Storehouse}
@@ -175,26 +180,37 @@ Structure and formatting (STRICT):
 Allowed "mishap" / realization endings (choose one, verbatim):
 ${ENDINGS.map(e=>'- '+e).join('\n')}
 
-Tone guide highlights: Zizek = digressive rant; Faemino-Cansado = absurd logic, deadpan pauses; others match their common voice.
+Tone guide highlights: Zizek = digressive rant; Faemino-Cansado = absurd logic, deadpan pauses; others match their common voice.`;
 
-Return ONLY the JSON object. No preface, no postface, no code fences.`;
+  const extra = toneSpecificBlock(p);
+  return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
+                       : `\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.`);
 }
+
+/* ---------- Model Output Validation ---------- */
 
 function validateModelOutput(text, params) {
   let jsonText = text.trim();
+
   // Remove code fences if present
   if (jsonText.startsWith('```')) {
     const m = jsonText.match(/```(?:json)?\n([\s\S]*?)\n```/i);
     if (m) jsonText = m[1].trim();
   }
+
   let obj;
   try { obj = JSON.parse(jsonText); } catch (e) {
     return { ok: false, error: 'Model did not return valid JSON' };
   }
+
   const keys = ['joke','scenario','roles','tone','length','ending_phrase','tags'];
   for (const k of keys) { if (!(k in obj)) return { ok: false, error: 'Missing key: ' + k }; }
-  if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
+
   if (typeof obj.joke !== 'string' || !obj.joke.trim()) return { ok:false, error:'empty joke' };
+  if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
+  if (obj.scenario !== params.scenario) return { ok:false, error:'scenario mismatch' };
+  if (obj.tone !== params.tone) return { ok:false, error:'tone mismatch' };
+  if (obj.length !== params.length) return { ok:false, error:'length mismatch' };
   if (!ENDINGS.includes(obj.ending_phrase)) return { ok:false, error:'ending_phrase not allowed' };
 
   const len = (obj.length||'').toLowerCase();
@@ -205,5 +221,7 @@ function validateModelOutput(text, params) {
     const lines = obj.joke.split(/\r?\n/).length;
     if (chars > 500 || lines > 4) return { ok:false, error:'joke too long for long' };
   }
+
+  // Serialize once to ensure we always return valid JSON string to the client
   return { ok: true, jsonString: JSON.stringify(obj) };
 }
