@@ -14,9 +14,9 @@ export default async function handler(req, res) {
 
     // ---- STUB MODE (optional for demo/testing) ----
     if (process.env.USE_STUB === '1') {
-      const ending = ENDINGS[Math.floor(Math.random() * ENDINGS.length)];
+      const ending = pickEnding();
       const stub = {
-        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... and then—`,
+        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... and then— ${ending}`,
         scenario: params.scenario,
         roles: params.roles,
         tone: params.tone,
@@ -28,10 +28,8 @@ export default async function handler(req, res) {
     }
     // -----------------------------------------------
 
-    // Build prompt with guardrails
     const prompt = buildPrompt(params);
 
-    // Call OpenAI (Chat Completions)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -42,7 +40,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         temperature: 0.7,
-        max_tokens: 400,
+        max_tokens: 500,
         messages: [
           { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
           { role: 'user', content: prompt }
@@ -59,26 +57,14 @@ export default async function handler(req, res) {
     const data = await r.json();
     let text = data?.choices?.[0]?.message?.content?.trim() || '';
 
-    // Validate / parse strict JSON
-    let validated = validateModelOutput(text, params);
-
-    // If wrapped in markdown or noise, try to extract JSON between braces
-    if (!validated.ok) {
-      const first = text.indexOf('{');
-      const last = text.lastIndexOf('}');
-      if (first !== -1 && last !== -1 && last > first) {
-        const slice = text.slice(first, last + 1);
-        validated = validateModelOutput(slice, params);
-      }
+    // Parse / sanitize / enforce
+    const processed = processModelOutput(text, params);
+    if (!processed.ok) {
+      console.warn('Model output failed validation:', processed.error, '\nRaw:', text);
+      return res.status(422).json({ error: processed.error, raw: text });
     }
 
-    if (!validated.ok) {
-      console.warn('Model output failed validation:', validated.error, '\nRaw:', text);
-      return res.status(422).json({ error: validated.error, raw: text });
-    }
-
-    // Success
-    return res.status(200).send(validated.jsonString);
+    return res.status(200).send(JSON.stringify(processed.obj));
 
   } catch (e) {
     console.error('Server error:', e);
@@ -86,7 +72,7 @@ export default async function handler(req, res) {
   }
 }
 
-/* ---------- Constants / Validation ---------- */
+/* ---------- Constants ---------- */
 
 const ENDINGS = [
   "Shit! I was telling it the wrong way...",
@@ -97,6 +83,20 @@ const ENDINGS = [
   "Hmm... maybe I have it backwards. Sorry, lost it."
 ];
 
+const ZIZEK_COUNTRIES = [
+  "Yugoslavia", "USSR", "Soviet Union", "Poland", "Czechoslovakia",
+  "Romania", "Bulgaria", "Hungary", "East Germany", "Albania"
+];
+
+/* ---------- Helpers ---------- */
+
+function pickEnding() {
+  return ENDINGS[Math.floor(Math.random() * ENDINGS.length)];
+}
+
+function normalizeStr(s){ return (s||'').toString().trim(); }
+function normLower(s){ return normalizeStr(s).toLowerCase(); }
+
 function validateParams(p) {
   if (!p) return 'Missing params';
   if (!p.scenario) return 'Missing scenario';
@@ -106,30 +106,28 @@ function validateParams(p) {
   return null;
 }
 
-/* ---------- Tone-specific injection (ONLY for the two special tones) ---------- */
+/* ---------- Tone-specific injection ---------- */
 
 function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Voice: absurd, polite, dry; short lines; deadpan pauses marked with "(pause)" or "...".
-- Form: if 2 ROLES → micro-dialogue with role prefixes ("Artist:", "Curator:", etc.);
-        if 1 ROLE → monologue but include 1–2 interjections by "Other:".
-- Space: stay grounded in the museum/gallery place (cloakroom tags, labels, gloves, elevator, floor signage, QR codes, etc.).
-- Logic: invent a silly rule or definition that collapses gently; never a classic punchline.
-- Length: 3–7 short lines (still respect overall LENGTH limit).
-- Language: English only. No current political slang. Keep it timeless.
-- End: last line MUST be EXACTLY one of the allowed endings. No variations.`;
+- Register: elevated vocabulary MISAPPLIED 2–3 times (e.g., "ontologically barish", "teleological ticket stub").
+- Voice: absurd, polite, deadpan; bar-counter vibe; use at least one bar prop (beer coaster, napkin math, toothpick, peanuts).
+- Form: if 2 ROLES → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.); if 1 ROLE → monologue with 1–2 interjections by "Other:".
+- Rhythm: short lines with "(pause)" or "..." scattered; never a classic punchline; introduce a silly rule/definition that gently collapses.
+- Keep language ENGLISH, timeless, no topical politics; 3–7 very short lines total; still obey LENGTH limits.
+- End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Narration: first-person, conference-like, chaotic/digressive; sprinkle "you know" and sometimes "and so on, and so on".
-- Start: explicitly say you're telling an old joke; mention a COUNTRY from the former communist East (e.g., former Yugoslavia, USSR, etc.). Countries only, no cities.
-- Include 1–2 short digressions (philosophy/politics) and 1–2 references (e.g., Hegelian utopia, Soviet posters, Gorbachev’s birthmark, Trotsky’s diary, Kant’s wig, Lacan lecture, etc.).
-- Length: 3–5 lines, concise (respect LENGTH limit).
-- Language: English only.
-- End: last line MUST be EXACTLY one of the allowed endings. No variations.`;
+- Persona: first-person lecture, digressive; include EXACTLY one "you know" and EXACTLY one "and so on".
+- Start: "I'm telling an old joke from <COUNTRY>" where <COUNTRY> is EXACTLY one of: ${ZIZEK_COUNTRIES.join(', ')}.
+- Content: 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
+- Form: 3–4 lines total; concise but not telegraphic. If LENGTH=long aim ~220–420 chars; if medium ≤320; if short ≤160.
+- Language: ENGLISH only.
+- End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   return '';
 }
@@ -151,102 +149,93 @@ ROLES = ${p.roles.join(', ')}
 TONE = ${p.tone}
 LENGTH = ${p.length}
 
-High-level goal:
-Create a short, witty, situational joke in English that uses the given SCENARIO, ROLES, and TONE. The joke must feel like an actual person telling a joke in that place. Important premise: every joke MUST end with the teller realizing they are telling the joke incorrectly and uttering a short self-correcting/confessional line (the "mishap line"). Use one of the allowed endings below.
+Premise:
+Every joke MUST end with a short realization line (the "mishap line") that is EXACTLY one of the allowed endings below.
 
-Structure and formatting (STRICT):
-1) Output strictly as JSON (no extra commentary) with the following keys:
-   - "joke": string — the full joke text (with line breaks as \\n if needed).
-   - "scenario": string — echo input SCENARIO.
-   - "roles": array of strings — echo input ROLES.
-   - "tone": string — echo input TONE.
-   - "length": string — echo input LENGTH.
-   - "ending_phrase": string — the final realization line used.
-   - "tags": array of strings — short tags such as ["surreal","dialogue","anti-joke"].
-2) Use only English for the "joke" and the "ending_phrase".
-3) Keep the whole "joke" concise: short ≤160 chars; medium ≤320; long ≤500 and ≤4 lines.
-4) If ROLES has two items, include a short dialogue/interaction; if one, monologue/observation is allowed.
+Structure / formatting (STRICT):
+1) Output strictly as JSON (no extra commentary) with keys:
+   "joke" (string), "scenario" (string), "roles" (array), "tone" (string),
+   "length" (string), "ending_phrase" (string), "tags" (array).
+2) Use only ENGLISH in "joke" and "ending_phrase".
+3) Length limits: short ≤160 chars; medium ≤320; long ≤500 and ≤4 lines.
+4) If ROLES has two items, write a short interaction; if one, a monologue is acceptable.
 5) Avoid hateful/violent content and real-person defamation.
-6) If you cannot produce a proper joke, return JSON with "joke":"" and an "error" key explaining why.
+6) If you cannot comply, return {"joke":"","error":"reason"} strictly as JSON.
 
-Allowed "mishap" / realization endings (choose one, verbatim):
+Allowed endings (choose one, verbatim):
 ${ENDINGS.map(e=>'- '+e).join('\n')}
 
-Tone guide highlights: Zizek = digressive rant; Faemino-Cansado = absurd logic, deadpan pauses; others match their common voice.`;
+Tone hints: Zizek = digressive lecture; Faemino-Cansado = absurd bar-logic with elevated-but-misused vocabulary; others keep their usual voice.`;
 
   const extra = toneSpecificBlock(p);
   return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
                        : `\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.`);
 }
 
-/* ---------- Model Output Validation ---------- */
+/* ---------- Output processing & validation ---------- */
 
-function normalizeStr(s){ return (s||'').toString().trim(); }
-function normalizeLower(s){ return normalizeStr(s).toLowerCase(); }
-
-function sameScenario(a,b){
-  return normalizeLower(a) === normalizeLower(b);
-}
-
-function sameTone(a,b){
-  return normalizeLower(a) === normalizeLower(b);
-}
-
-function sameLength(a,b){
-  // allow synonyms like "Short"/"short", trim spaces
-  const A = normalizeLower(a);
-  const B = normalizeLower(b);
-  return (A === B);
-}
-
-function sameRoles(arrA, arrB){
-  if (!Array.isArray(arrA) || !Array.isArray(arrB)) return false;
-  const A = arrA.map(x=>normalizeLower(x)).sort();
-  const B = arrB.map(x=>normalizeLower(x)).sort();
-  if (A.length !== B.length) return false;
-  for (let i=0;i<A.length;i++){ if (A[i] !== B[i]) return false; }
-  return true;
-}
-
-function validateModelOutput(text, params) {
-  let jsonText = text.trim();
-
-  // Remove code fences if present
-  if (jsonText.startsWith('```')) {
-    const m = jsonText.match(/```(?:json)?\n([\s\S]*?)\n```/i);
-    if (m) jsonText = m[1].trim();
+function extractJSON(text){
+  let s = text.trim();
+  if (s.startsWith('```')) {
+    const m = s.match(/```(?:json)?\n([\s\S]*?)\n```/i);
+    if (m) s = m[1].trim();
   }
+  // Fallback: slice between first { and last }
+  if (!(s.trim().startsWith('{') && s.trim().endsWith('}'))) {
+    const first = s.indexOf('{');
+    const last = s.lastIndexOf('}');
+    if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last+1);
+  }
+  return s;
+}
 
+function processModelOutput(text, params){
+  let jsonText = extractJSON(text);
   let obj;
-  try { obj = JSON.parse(jsonText); } catch (e) {
-    return { ok: false, error: 'Model did not return valid JSON' };
+  try { obj = JSON.parse(jsonText); } catch {
+    return { ok:false, error:'Model did not return valid JSON' };
   }
+  if (typeof obj !== 'object' || obj === null) return { ok:false, error:'Invalid JSON object' };
 
+  // Ensure keys exist
   const keys = ['joke','scenario','roles','tone','length','ending_phrase','tags'];
-  for (const k of keys) { if (!(k in obj)) return { ok: false, error: 'Missing key: ' + k }; }
+  for (const k of keys) { if (!(k in obj)) return { ok:false, error:'Missing key: '+k }; }
 
+  // Basic types
   if (typeof obj.joke !== 'string' || !obj.joke.trim()) return { ok:false, error:'empty joke' };
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
+  if (!Array.isArray(obj.tags)) obj.tags = [];
 
-  // Tolerant field checks (case-insensitive and order-agnostic where appropriate)
-  if (!sameScenario(obj.scenario, params.scenario)) return { ok:false, error:'scenario mismatch' };
-  if (!sameTone(obj.tone, params.tone)) return { ok:false, error:'tone mismatch' };
-  if (!sameLength(obj.length, params.length)) return { ok:false, error:'length mismatch' };
-  if (!sameRoles(obj.roles, params.roles)) return { ok:false, error:'roles mismatch' };
+  // --- Coerce echo fields to inputs to avoid spurious mismatches ---
+  obj.scenario = params.scenario;
+  obj.roles    = params.roles;
+  obj.tone     = params.tone;
+  obj.length   = params.length;
 
-  // Ending must be exactly one of the allowed set (we keep this strict)
-  if (!ENDINGS.includes(obj.ending_phrase)) return { ok:false, error:'ending_phrase not allowed' };
-
-  // Length constraints
-  const len = normalizeLower(obj.length);
-  const chars = obj.joke.length;
-  if (len === 'short' && chars > 160) return { ok:false, error:'joke too long for short' };
-  if (len === 'medium' && chars > 320) return { ok:false, error:'joke too long for medium' };
-  if (len === 'long') {
-    const lines = obj.joke.split(/\r?\n/).length;
-    if (chars > 500 || lines > 4) return { ok:false, error:'joke too long for long' };
+  // --- Ending enforcement ---
+  let ending = normalizeStr(obj.ending_phrase);
+  const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
+  if (!foundAllowed) {
+    // If the joke already ends with any allowed ending, adopt that; else pick one
+    const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
+    ending = tail || pickEnding();
+  }
+  // Ensure joke ends with the ending exactly once
+  const trimmedJoke = obj.joke.trim().replace(/\s+$/, '');
+  const endsOk = ENDINGS.some(e => trimmedJoke.endsWith(e));
+  obj.ending_phrase = ending;
+  if (!endsOk) {
+    const sep = trimmedJoke.endsWith('\n') ? '' : (trimmedJoke.includes('\n') ? '\n' : ' ');
+    obj.joke = (trimmedJoke + sep + ending).trim();
   }
 
-  // Serialize once to ensure we always return valid JSON string to the client
-  return { ok: true, jsonString: JSON.stringify(obj) };
+  // Length rules
+  const chars = obj.joke.length;
+  const lines = obj.joke.split(/\r?\n/).length;
+  const len = normLower(obj.length);
+  if (len === 'short' && chars > 160) return { ok:false, error:'joke too long for short' };
+  if (len === 'medium' && chars > 320) return { ok:false, error:'joke too long for medium' };
+  if (len === 'long' && (chars > 500 || lines > 4)) return { ok:false, error:'joke too long for long' };
+
+  return { ok:true, obj };
 }
