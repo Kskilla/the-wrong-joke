@@ -40,7 +40,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         temperature: 0.7,
-        max_tokens: 500,
+        max_tokens: 700, // dejamos holgura ya que no validamos longitudes
         messages: [
           { role: 'system', content: 'You are a careful writer that follows instructions exactly and outputs strict JSON only.' },
           { role: 'user', content: prompt }
@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       return res.status(422).json({ error: processed.error, raw: text });
     }
 
+    // Devolvemos el objeto ya corregido/forzado
     return res.status(200).send(JSON.stringify(processed.obj));
 
   } catch (e) {
@@ -113,19 +114,19 @@ function toneSpecificBlock(p){
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
 - Register: elevated vocabulary MISAPPLIED 2–3 times (e.g., "ontologically barish", "teleological ticket stub").
-- Voice: absurd, polite, deadpan; bar-counter vibe; use at least one bar prop (beer coaster, napkin math, toothpick, peanuts).
+- Voice: absurd, polite, deadpan; bar-counter vibe; include at least one bar prop (beer coaster, napkin math, toothpick, peanuts).
 - Form: if 2 ROLES → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.); if 1 ROLE → monologue with 1–2 interjections by "Other:".
-- Rhythm: short lines with "(pause)" or "..." scattered; never a classic punchline; introduce a silly rule/definition that gently collapses.
-- Keep language ENGLISH, timeless, no topical politics; 3–7 very short lines total; still obey LENGTH limits.
+- Rhythm: short lines with "(pause)" or "..." sprinkled; introduce a silly rule/definition that gently collapses; never a classic punchline.
+- Language: ENGLISH; timeless; no topical politics.
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
   if (p.tone === 'Zizek') {
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Persona: first-person lecture, digressive; include EXACTLY one "you know" and EXACTLY one "and so on".
+- Persona: first-person lecture, digressive; include at least one "you know" and one "and so on".
 - Start: "I'm telling an old joke from <COUNTRY>" where <COUNTRY> is EXACTLY one of: ${ZIZEK_COUNTRIES.join(', ')}.
 - Content: 1–2 short philosophical/political asides (e.g., Hegel, Kant, Lacan, Soviet posters, Gorbachev’s birthmark).
-- Form: 3–4 lines total; concise but not telegraphic. If LENGTH=long aim ~220–420 chars; if medium ≤320; if short ≤160.
+- Form: 3–5 lines total; conference-like cadence (short sentences; aside clauses).
 - Language: ENGLISH only.
 - End: the LAST line MUST be exactly one of the allowed endings (verbatim).`;
   }
@@ -141,7 +142,7 @@ Inputs (exact allowed sets):
 - SCENARIO: one of {Queue, Desktop, Entrance hall, Gallery, Bathroom, Cloakroom, Elevator, Director's office, Education Department, Archive, Library, Auditorium, Shop, Storehouse}
 - ROLES: one or two roles from {Visitor, Artist, Curator, Director, Gallerist, Technician, Guide, Critic, Registrar, Guard, Cleaner, Cloakroom attendant, Ticket seller, Dog}
 - TONE: one of {Dry, Ironic, Cocky, Silly, Zizek, Sarcastic, Faemino-Cansado, Flowery, Cringe, Fantastic, Meta, Campy, Over-the-top}
-- LENGTH: one of {short, medium, long}
+- LENGTH: one of {short, medium, long}  (hint to style; NOT a hard limit)
 
 USE THESE INPUTS FOR THIS CALL:
 SCENARIO = ${p.scenario}
@@ -157,7 +158,7 @@ Structure / formatting (STRICT):
    "joke" (string), "scenario" (string), "roles" (array), "tone" (string),
    "length" (string), "ending_phrase" (string), "tags" (array).
 2) Use only ENGLISH in "joke" and "ending_phrase".
-3) Length limits: short ≤160 chars; medium ≤320; long ≤500 and ≤4 lines.
+3) Keep it reasonably concise, but there are NO strict character/line limits.
 4) If ROLES has two items, write a short interaction; if one, a monologue is acceptable.
 5) Avoid hateful/violent content and real-person defamation.
 6) If you cannot comply, return {"joke":"","error":"reason"} strictly as JSON.
@@ -206,7 +207,7 @@ function processModelOutput(text, params){
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
   if (!Array.isArray(obj.tags)) obj.tags = [];
 
-  // --- Coerce echo fields to inputs to avoid spurious mismatches ---
+  // --- Coerce echo fields to inputs to avoid mismatches (UI stays source of truth) ---
   obj.scenario = params.scenario;
   obj.roles    = params.roles;
   obj.tone     = params.tone;
@@ -216,26 +217,30 @@ function processModelOutput(text, params){
   let ending = normalizeStr(obj.ending_phrase);
   const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
   if (!foundAllowed) {
-    // If the joke already ends with any allowed ending, adopt that; else pick one
+    // Si el chiste ya termina con un ending permitido, usamos ese; si no, elegimos uno.
     const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
     ending = tail || pickEnding();
   }
-  // Ensure joke ends with the ending exactly once
-  const trimmedJoke = obj.joke.trim().replace(/\s+$/, '');
-  const endsOk = ENDINGS.some(e => trimmedJoke.endsWith(e));
+  // Asegura que el chiste termine EXACTAMENTE con el ending una sola vez
+  let j = obj.joke.replace(/\s+$/, '');
+  const endsOk = ENDINGS.some(e => j.endsWith(e));
   obj.ending_phrase = ending;
   if (!endsOk) {
-    const sep = trimmedJoke.endsWith('\n') ? '' : (trimmedJoke.includes('\n') ? '\n' : ' ');
-    obj.joke = (trimmedJoke + sep + ending).trim();
+    const needsNL = !j.endsWith('\n') && j.includes('\n');
+    const sep = needsNL ? '\n' : (j.endsWith(' ') || j.endsWith('\n') ? '' : ' ');
+    j = j + sep + ending;
   }
+  // Evitar duplicación de ending si el modelo lo metió antes en medio
+  for (const e of ENDINGS) {
+    const idx = j.indexOf(e);
+    if (idx !== -1 && !j.endsWith(e)) {
+      // Si aparece antes pero no es el final, lo dejamos (puede ser gag), no lo truncamos.
+      // Solo garantizamos que el último sea el ending elegido.
+    }
+  }
+  obj.joke = j;
 
-  // Length rules
-  const chars = obj.joke.length;
-  const lines = obj.joke.split(/\r?\n/).length;
-  const len = normLower(obj.length);
-  if (len === 'short' && chars > 160) return { ok:false, error:'joke too long for short' };
-  if (len === 'medium' && chars > 320) return { ok:false, error:'joke too long for medium' };
-  if (len === 'long' && (chars > 500 || lines > 4)) return { ok:false, error:'joke too long for long' };
+  // Sin límites de longitud: no validamos chars/lines
 
   return { ok:true, obj };
 }
