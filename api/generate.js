@@ -14,14 +14,6 @@ export default async function handler(req, res) {
 
     // ---- STUB MODE (optional for demo/testing) ----
     if (process.env.USE_STUB === '1') {
-      const ENDINGS = [
-        "Shit! I was telling it the wrong way...",
-        "Hmm... wait, wait, that's not the way.",
-        "Mmm... it wasn't like that, but it is very funny, I swear.",
-        "No — no, that's not how it goes. Hold on.",
-        "Wait. I'm messing it up. This is not how the joke goes.",
-        "Hmm... maybe I have it backwards. Sorry, lost it."
-      ];
       const ending = ENDINGS[Math.floor(Math.random() * ENDINGS.length)];
       const stub = {
         joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... and then—`,
@@ -189,6 +181,33 @@ Tone guide highlights: Zizek = digressive rant; Faemino-Cansado = absurd logic, 
 
 /* ---------- Model Output Validation ---------- */
 
+function normalizeStr(s){ return (s||'').toString().trim(); }
+function normalizeLower(s){ return normalizeStr(s).toLowerCase(); }
+
+function sameScenario(a,b){
+  return normalizeLower(a) === normalizeLower(b);
+}
+
+function sameTone(a,b){
+  return normalizeLower(a) === normalizeLower(b);
+}
+
+function sameLength(a,b){
+  // allow synonyms like "Short"/"short", trim spaces
+  const A = normalizeLower(a);
+  const B = normalizeLower(b);
+  return (A === B);
+}
+
+function sameRoles(arrA, arrB){
+  if (!Array.isArray(arrA) || !Array.isArray(arrB)) return false;
+  const A = arrA.map(x=>normalizeLower(x)).sort();
+  const B = arrB.map(x=>normalizeLower(x)).sort();
+  if (A.length !== B.length) return false;
+  for (let i=0;i<A.length;i++){ if (A[i] !== B[i]) return false; }
+  return true;
+}
+
 function validateModelOutput(text, params) {
   let jsonText = text.trim();
 
@@ -208,12 +227,18 @@ function validateModelOutput(text, params) {
 
   if (typeof obj.joke !== 'string' || !obj.joke.trim()) return { ok:false, error:'empty joke' };
   if (!Array.isArray(obj.roles) || obj.roles.length < 1 || obj.roles.length > 2) return { ok:false, error:'roles must be array(1–2)' };
-  if (obj.scenario !== params.scenario) return { ok:false, error:'scenario mismatch' };
-  if (obj.tone !== params.tone) return { ok:false, error:'tone mismatch' };
-  if (obj.length !== params.length) return { ok:false, error:'length mismatch' };
+
+  // Tolerant field checks (case-insensitive and order-agnostic where appropriate)
+  if (!sameScenario(obj.scenario, params.scenario)) return { ok:false, error:'scenario mismatch' };
+  if (!sameTone(obj.tone, params.tone)) return { ok:false, error:'tone mismatch' };
+  if (!sameLength(obj.length, params.length)) return { ok:false, error:'length mismatch' };
+  if (!sameRoles(obj.roles, params.roles)) return { ok:false, error:'roles mismatch' };
+
+  // Ending must be exactly one of the allowed set (we keep this strict)
   if (!ENDINGS.includes(obj.ending_phrase)) return { ok:false, error:'ending_phrase not allowed' };
 
-  const len = (obj.length||'').toLowerCase();
+  // Length constraints
+  const len = normalizeLower(obj.length);
   const chars = obj.joke.length;
   if (len === 'short' && chars > 160) return { ok:false, error:'joke too long for short' };
   if (len === 'medium' && chars > 320) return { ok:false, error:'joke too long for medium' };
