@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (process.env.USE_STUB === '1') {
       const ending = pickEnding();
       const stub = {
-        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit... — ${ending}`,
+        joke: `${params.roles.join(" & ")} at the ${params.scenario} try a ${params.tone.toLowerCase()} bit...`,
         scenario: params.scenario,
         roles: params.roles,
         tone: params.tone,
@@ -24,6 +24,8 @@ export default async function handler(req, res) {
         ending_phrase: ending,
         tags: ["debug","stub"]
       };
+      // corte brusco
+      stub.joke = forceAbruptCut(stub.joke) + ' — ' + ending;
       return res.status(200).json(stub);
     }
     // -------------------
@@ -127,7 +129,7 @@ async function openaiChatWithRetry({ model, apiKey, messages, temperature, max_t
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
-/* ---------- Constants ---------- */
+/* ---------- Constants & Pools ---------- */
 
 const ENDINGS = [
   "Shit! I was telling it the wrong way...",
@@ -143,7 +145,6 @@ const ZIZEK_COUNTRIES = [
   "Romania", "Bulgaria", "Hungary", "East Germany", "Albania"
 ];
 
-// Lista oficial (Nora) de referencias; el modelo debe elegir 1–2 al azar
 const ZIZEK_REFERENCE_POOL = [
   "Former Yugoslavia",
   "Nietzsche’s horse in Turin",
@@ -192,11 +193,69 @@ const ZIZEK_REFERENCE_POOL = [
   "Party-approved recipe books"
 ];
 
+// Items que detectamos muy repetidos: los despriorizamos al muestrear
+const ZIZEK_OVERUSED = new Set([
+  "Nietzsche’s horse in Turin",
+  "Gorbachev’s birthmark",
+  "Trotsky’s diary",
+  "The Berlin Wall graffiti",
+  "Empty vodka bottles on a podium"
+]);
+
 /* ---------- Helpers ---------- */
 
 function pickEnding() { return ENDINGS[Math.floor(Math.random() * ENDINGS.length)]; }
 function normalizeStr(s){ return (s||'').toString().trim(); }
 function normLower(s){ return normalizeStr(s).toLowerCase(); }
+
+// Corta conectores “de remate” y risas para que el ending entre como interrupción
+function forceAbruptCut(text) {
+  let j = (text || '').replace(/\s+$/u, '');
+
+  // 1) Quitar risas y onomatopeyas al final
+  j = j.replace(/\s*(?:ha(?:ha)+|lol|lmao|\(laughs\)|\[laughter\])\s*$/iu, '');
+
+  // 2) Quitar conectores de remate tipo “so/therefore/finally/in the end/that's why/and then/boom”
+  j = j.replace(/\s*(?:so|therefore|finally|in the end|that'?s why|after all|and then|hence|boom|ta-?da)[^.\n]*$/iu, '');
+
+  // 3) Si hay dos puntos/— al final de la última frase, corta ahí
+  j = j.replace(/[:—-]\s*$/u, '');
+
+  // 4) Si queda una frase entera final muy “redonda”, recorta hasta la última coma o salto de línea cercano
+  const tail = j.slice(-120);
+  const lastNL = tail.lastIndexOf('\n');
+  const lastComma = tail.lastIndexOf(',');
+  if (lastNL !== -1) {
+    j = j.slice(0, j.length - (tail.length - lastNL - 1));
+  } else if (lastComma !== -1) {
+    j = j.slice(0, j.length - (tail.length - lastComma - 1));
+  }
+
+  // 5) Limpia puntuación final sobrante
+  j = j.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
+
+  return j;
+}
+
+// Elimina cualquier ocurrencia de endings permitidos en la “cabeza” del texto
+function stripAllEndingsFrom(text){
+  let out = text;
+  for (const e of ENDINGS) out = out.split(e).join('');
+  return out;
+}
+
+// Muestreo aleatorio sin repetición
+function sampleArray(arr, k, biasFn) {
+  const items = [...arr];
+  // Si hay función de sesgo (para quitar sobreusados), reordenamos con preferencia
+  if (biasFn) items.sort((a,b) => (biasFn(a) - biasFn(b)) || (Math.random() - 0.5));
+  // Fisher-Yates
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items.slice(0, Math.min(k, items.length));
+}
 
 function validateParams(p) {
   if (!p) return 'Missing params';
@@ -213,12 +272,15 @@ function toneSpecificBlock(p){
   if (p.tone === 'Faemino-Cansado') {
     return `
 TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado"):
-- Persona: confident pseudo-expert (Spanish “cuñado” vibe) but polite and non-hostile; assertive, slightly cocky; never insulting.
-- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." for timing; conversational rhythm.
-- Register: use EXACTLY 2 malapropisms INVENTED FRESH in each joke (do NOT reuse example phrases). They must sound elevated-but-misused (e.g., but not limited to forms like "epistemic mop", "ontological tapas", "dialectical locker").
+- Persona: confident neighborhood "know-it-all" (Spanish castizo cuñado vibe), polite and non-hostile; assertive but not aggressive.
+- Cadence: deadpan minimalism; short clipped lines; optional "(pause)" or "..." as timing marks; conversational rhythm.
+- Register: use 1–2 light malapropisms with everyday flavor (NO academic/philosophical jargon). 
+  Absolutely AVOID words like "epistemic", "ontological", "dialectical".
+  Examples of style ONLY (do NOT reuse verbatim): "municipal metaphysics", "aesthetic receipt", "metaphysical ticket".
 - Mechanism: state a pompous “rule” or “definition” about art/museum/logistics, then apply it to a trivial on-site detail so the logic gently collapses into absurdity. No classic punchline.
-- Conversational flavor: sprinkle 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—subtle.
-- Setting discipline: keep the scene strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage are fine). DO NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
+- Conversational flavor: 1–2 mild castizo-style interjections in English ("phenomenal", "right, right", "listen", "indeed")—subtle.
+- Setting discipline: stay strictly inside the given museum SCENARIO (labels, tickets, cloakroom tags, elevators, signage). 
+  DO NOT mention bars, cafés, drinks, cigarettes, or bar props explicitly.
 - Form:
     • If ROLES = 2 → micro-dialogue prefixed by roles ("Artist:", "Curator:", etc.), quick back-and-forth.
     • If ROLES = 1 → monologue with 1–2 very brief interjections by "Other:".
@@ -226,23 +288,28 @@ TONE-SPECIFIC RULES — Faemino-Cansado (apply ONLY if TONE = "Faemino-Cansado")
 - ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line. Avoid apology/self-correction before the last line.`;
   }
   if (p.tone === 'Zizek') {
+    const refsSubset = sampleArray(
+      ZIZEK_REFERENCE_POOL,
+      10,
+      (x)=> ZIZEK_OVERUSED.has(x) ? 1 : 0   // sesgo: sobreusados al final
+    );
     return `
 TONE-SPECIFIC RULES — Zizek (apply ONLY if TONE = "Zizek"):
-- Tone: imitate the chaotic conference persona of Slavoj Žižek; first-person, neurotic, self-referential, full of tangents; academic language + absurd humor.
-- Opening (MANDATORY): begin by announcing you are telling an old joke and name a COUNTRY from the former communist East (choose one of: ${ZIZEK_COUNTRIES.join(', ')}). Mention countries only, never cities.
-  Use ONE of these openings (randomly): 
+- Tone: chaotic conference persona; first-person, neurotic, self-referential, tangential; academic language + absurd humor.
+- Opening (MANDATORY): announce you are telling an old joke and name a COUNTRY from the former communist East (choose one of: ${ZIZEK_COUNTRIES.join(', ')}). Mention countries only, never cities.
+  Use ONE of these openings (choose randomly): 
     1) "I'm telling an old joke from <COUNTRY>."
     2) "There is this old joke they used to tell in <COUNTRY>."
     3) "I remember an old joke from <COUNTRY>."
     4) "In <COUNTRY>, there’s this old joke."
     5) "An old joke circulates in <COUNTRY>."
-- Digressions: include at least 1–2 short political/philosophical asides.
-- References: include 1–2 items RANDOMLY CHOSEN from this pool (do not always repeat the same ones):
-  ${ZIZEK_REFERENCE_POOL.map(x=>`• ${x}`).join('\n  ')}
-- Fillers: include at least one "you know"; "and so on, and so on" is optional (not mandatory every time).
-- Form: 3–5 lines total recommended; concise but digressive cadence.
+- Digressions: include 1–2 short political/philosophical asides.
+- References: include 1–2 items CHOSEN FROM THIS SUBSET (vary choices between outputs; do NOT always pick the same):
+  ${refsSubset.map(x=>`• ${x}`).join('\n  ')}
+- Fillers: include at least one "you know"; "and so on, and so on" is optional (0–1 times).
+- Form: 3–5 lines total; concise but digressive cadence.
 - Language: ENGLISH only.
-- ENDING USAGE (STRICT): the mishap line replaces any punchline; appears ONLY ONCE, as the very last line; NO apology/self-correction before that.`;
+- ENDING USAGE (STRICT): use ONE allowed ending from the global list, only once, as the final line (no other apology before).`;
   }
   return '';
 }
@@ -283,7 +350,7 @@ ${ENDINGS.map(e=>'- '+e).join('\n')}
 IMPORTANT — ENDING INTEGRATION (STRICT):
 - The ending is the ONLY explicit admission of error, and it must appear ONLY ONCE as the LAST line.
 - NO apology or self-correction words BEFORE the ending (e.g., "sorry", "wrong", "not the way", "messed it up", "backwards", "lost it").
-- The ending INTERRUPTS the delivery (abrupt cut): do NOT deliver a classic punchline and then the ending. The ending replaces any punchline.`;
+- The ending INTERRUPTS the delivery (abrupt cut). Do NOT deliver a classic punchline and then the ending — the ending replaces any punchline.`;
 
   const extra = toneSpecificBlock(p);
   return base + (extra ? `\n\n${extra}\n\nReturn ONLY the JSON object. No preface, no postface, no code fences.` 
@@ -304,13 +371,6 @@ function extractJSON(text){
     if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last+1);
   }
   return s;
-}
-
-// Remove ANY allowed ending occurrences from a string (used on the pre-ending head)
-function stripAllEndingsFrom(text){
-  let out = text;
-  for (const e of ENDINGS) out = out.split(e).join('');
-  return out;
 }
 
 function processModelOutput(text, params){
@@ -336,34 +396,26 @@ function processModelOutput(text, params){
   obj.tone     = params.tone;
   obj.length   = params.length;
 
-  // --- Ending selection / enforcement ---
+  // --- Ending selection / enforcement (unificado para todos los tonos) ---
   let ending = normalizeStr(obj.ending_phrase);
-
-  // Para Zizek, forzamos el ending principal con "Shit!" (alineado con documento y con tu lista de ENDINGS)
-  const ZIZEK_FORCED_ENDING = ENDINGS[0]; // "Shit! I was telling it the wrong way..."
-  if (obj.tone === 'Zizek') {
-    ending = ZIZEK_FORCED_ENDING;
-  } else {
-    const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
-    if (!foundAllowed) {
-      const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
-      ending = tail || pickEnding();
-    }
+  const foundAllowed = ENDINGS.find(e => normalizeStr(e) === ending);
+  if (!foundAllowed) {
+    const tail = ENDINGS.find(e => obj.joke.trim().endsWith(e));
+    ending = tail || pickEnding();
   }
 
-  // Ensure joke ends exactly once with the ending AND make it abrupt
-  let j = obj.joke.replace(/\s+$/, '');
-  let idx = j.lastIndexOf(ending);
-  if (idx === -1) {
-    // Append ending after cleaning tail (regex con Unicode seguro)
-    const headClean = j.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
-    j = headClean + ' — ' + ending;
-  } else {
-    let head = j.slice(0, idx);
-    // Purge ANY allowed endings in head
+  // Limpiar cualquier ending previo en el cuerpo y forzar corte brusco
+  let j = obj.joke.replace(/\s+$/u, '');
+  // Si ya estaba el ending en el texto, tomamos la última aparición como marcador y limpiamos la cabeza
+  const lastIdx = j.lastIndexOf(ending);
+  if (lastIdx !== -1) {
+    let head = j.slice(0, lastIdx);
     head = stripAllEndingsFrom(head);
-    // Clean trailing punctuation to feel like a cut
-    head = head.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
+    head = forceAbruptCut(head);
+    const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
+    j = head + sep + ending;
+  } else {
+    const head = forceAbruptCut(j);
     const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
     j = head + sep + ending;
   }
