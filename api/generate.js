@@ -4,7 +4,7 @@
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
@@ -42,15 +42,14 @@ export default async function handler(req, res) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.6,
-      max_tokens: 400, // menos tokens → más rápido y menos timeouts
+      max_tokens: 400,  // más ágil y menos timeouts
       timeoutMs: 15000, // 15s timeout duro
-      retries: 2       // reintenta en 429/5xx
+      retries: 2        // reintenta en 429/5xx
     });
 
     if (!upstream.ok) {
       console.error('OpenAI upstream failure:', upstream.status, upstream.body);
       const status = upstream.status || 502;
-      // devolvemos JSON claro para que el front no lo confunda con "Network error"
       return res.status(status).json({
         error: 'Upstream error',
         detail: upstream.body || 'No response body',
@@ -116,7 +115,6 @@ async function openaiChatWithRetry({ model, apiKey, messages, temperature, max_t
     } catch (err) {
       clearTimeout(to);
       const isAbort = err?.name === 'AbortError';
-      // reintentar si fue timeout o red de Node
       if (isAbort || attempt < retries) {
         await sleep(300 * (attempt + 1));
         continue;
@@ -299,15 +297,15 @@ function processModelOutput(text, params){
   let j = obj.joke.replace(/\s+$/, '');
   let idx = j.lastIndexOf(ending);
   if (idx === -1) {
-    // Append ending after cleaning tail
-    const headClean = j.replace(/[\s\.\!\?…"'’”\)\]\}\:\;]+$/u, '');
+    // Append ending after cleaning tail  (FIX: regex sin escapes inválidos)
+    const headClean = j.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
     j = headClean + ' — ' + ending;
   } else {
     let head = j.slice(0, idx);
     // Purge ANY allowed endings in head
     head = stripAllEndingsFrom(head);
-    // Clean trailing punctuation to feel like a cut
-    head = head.replace(/[\s\.\!\?…"'’”\)\]\}\:\;]+$/u, '');
+    // Clean trailing punctuation to feel like a cut  (FIX: regex sin escapes inválidos)
+    head = head.replace(/[\s.!?…"'’”)\]}:;]+$/u, '');
     const sep = head.includes('\n') && !head.endsWith('\n') ? '\n' : (head.endsWith('\n') ? '' : ' — ');
     j = head + sep + ending;
   }
